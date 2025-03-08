@@ -1,0 +1,9 @@
+apiVersion: rbac.kubeants.io/v1beta1
+kind: RoleTemplate
+metadata:
+  labels:
+    app.kubernetes.io/name: kubeants-controller
+    app.kubernetes.io/managed-by: kustomize
+  name: roletemplate-sample
+spec:
+  # TODO(user): Add fields here

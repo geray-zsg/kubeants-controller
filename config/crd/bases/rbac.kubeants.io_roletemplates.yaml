@@ -1,0 +1,250 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: roletemplates.rbac.kubeants.io
+spec:
+  group: rbac.kubeants.io
+  names:
+    kind: RoleTemplate
+    listKind: RoleTemplateList
+    plural: roletemplates
+    singular: roletemplate
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.autoApply
+      name: AutoApply
+      type: boolean
+    - jsonPath: .status.lastUpdateTime
+      name: UpdatedAt
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: RoleTemplate 是 RoleTemplate 的 Schema 定义
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RoleTemplateSpec 定义了 RoleTemplate 的期望状态
+            properties:
+              autoApply:
+                description: 是否自动应用到新建的 namespace
+                type: boolean
+              customRoles:
+                description: CustomRoles 允许用户自定义角色，并在符合条件的 namespace 下发
+                properties:
+                  excludedNamespaces:
+                    description: 排除的 namespace 列表
+                    items:
+                      type: string
+                    type: array
+                  namespaces:
+                    description: 需要下发的 namespace 列表，支持 * 代表所有 namespace
+                    items:
+                      type: string
+                    type: array
+                  roles:
+                    description: 角色定义
+                    items:
+                      description: RoleDefinition 定义角色名称及其规则
+                      properties:
+                        name:
+                          description: |-
+                            角色名称
+                            DefaultRoles 下发后的role名称则是该名称
+                            CustomRoles 下发后的role名称则是 roleTemplate模板名称+该规则名称
+                          type: string
+                        rules:
+                          description: 角色规则
+                          items:
+                            description: |-
+                              PolicyRule holds information that describes a policy rule, but does not contain information
+                              about who the rule applies to or which namespace the rule applies to.
+                            properties:
+                              apiGroups:
+                                description: |-
+                                  APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                                  the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              nonResourceURLs:
+                                description: |-
+                                  NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                                  Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
+                                  Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resourceNames:
+                                description: ResourceNames is an optional white list
+                                  of names that the rule applies to.  An empty set
+                                  means that everything is allowed.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resources:
+                                description: Resources is a list of resources this
+                                  rule applies to. '*' represents all resources.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              verbs:
+                                description: Verbs is a list of Verbs that apply to
+                                  ALL the ResourceKinds contained in this rule. '*'
+                                  represents all verbs.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - verbs
+                            type: object
+                          type: array
+                      required:
+                      - name
+                      - rules
+                      type: object
+                    type: array
+                required:
+                - namespaces
+                type: object
+              defaultRoles:
+                description: DefaultRoles 在所有符合条件的 namespace 中自动下发
+                properties:
+                  excludedNamespaces:
+                    description: 排除的 namespace 列表
+                    items:
+                      type: string
+                    type: array
+                  namespaces:
+                    description: 需要下发的 namespace 列表，支持 * 代表所有 namespace
+                    items:
+                      type: string
+                    type: array
+                  roles:
+                    description: 角色定义
+                    items:
+                      description: RoleDefinition 定义角色名称及其规则
+                      properties:
+                        name:
+                          description: |-
+                            角色名称
+                            DefaultRoles 下发后的role名称则是该名称
+                            CustomRoles 下发后的role名称则是 roleTemplate模板名称+该规则名称
+                          type: string
+                        rules:
+                          description: 角色规则
+                          items:
+                            description: |-
+                              PolicyRule holds information that describes a policy rule, but does not contain information
+                              about who the rule applies to or which namespace the rule applies to.
+                            properties:
+                              apiGroups:
+                                description: |-
+                                  APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                                  the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              nonResourceURLs:
+                                description: |-
+                                  NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                                  Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
+                                  Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resourceNames:
+                                description: ResourceNames is an optional white list
+                                  of names that the rule applies to.  An empty set
+                                  means that everything is allowed.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resources:
+                                description: Resources is a list of resources this
+                                  rule applies to. '*' represents all resources.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              verbs:
+                                description: Verbs is a list of Verbs that apply to
+                                  ALL the ResourceKinds contained in this rule. '*'
+                                  represents all verbs.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - verbs
+                            type: object
+                          type: array
+                      required:
+                      - name
+                      - rules
+                      type: object
+                    type: array
+                required:
+                - namespaces
+                type: object
+            required:
+            - autoApply
+            type: object
+          status:
+            description: RoleTemplateStatus 记录已应用的 namespace 信息
+            properties:
+              appliedCustomRolesNamespace:
+                description: 记录 CustomRoles 已应用的 namespace
+                items:
+                  type: string
+                type: array
+              appliedDefaultRolesNamespace:
+                description: 记录 DefaultRoles 已应用的 namespace
+                items:
+                  type: string
+                type: array
+              lastAppliedGeneration:
+                description: 记录最后一次应用的配置版本
+                format: int64
+                type: integer
+              lastUpdateTime:
+                description: 记录修改时间
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
