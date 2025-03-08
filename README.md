@@ -133,3 +133,19 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
+
+# 提交
+```
+…or create a new repository on the command line
+echo "# kubeants-controller" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin git@github.com:geray-zsg/kubeants-controller.git
+git push -u origin main
+…or push an existing repository from the command line
+git remote add origin git@github.com:geray-zsg/kubeants-controller.git
+git branch -M main
+git push -u origin main
+```
