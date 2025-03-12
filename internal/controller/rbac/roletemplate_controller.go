@@ -184,6 +184,7 @@ func (r *RoleTemplateReconciler) processRoles(ctx context.Context, rt *rbacv1bet
 	return nil
 }
 
+// 获取需要下发的namespace清单
 func (r *RoleTemplateReconciler) getApplicableNamespaces(ctx context.Context, included, excluded []string) ([]string, error) {
 	logger := log.FromContext(ctx)
 	var result []string
