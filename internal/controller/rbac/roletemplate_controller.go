@@ -29,7 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	// rbacv1beta1 "kubeants.io/apis/rbac/v1beta1"
 	rbacv1beta1 "github.com/kubeants/kubeants-controller/api/rbac/v1beta1"
@@ -84,10 +86,15 @@ func (r *RoleTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !rt.Spec.AutoApply {
 		logger.Info("AutoApply is false, skipping[自动注入为false，跳过]", "RoleTemplate", rt.Name)
 		return ctrl.Result{}, nil
-	} else if rt.Status.LastAppliedGeneration == rt.Generation {
-		logger.Info("RoleTemplate为修改，跳过处理", "RoleTemplate", rt.Name)
+	}
+
+	// ✅ 新增逻辑：如果 `Namespace` 发生变更（新建），也需要重新执行下发逻辑（roleTemplate是否有变化或者新增namesapce时下发）
+	needsReapply := rt.Status.LastAppliedGeneration != rt.Generation || hasNewNamespace(ctx, r, rt)
+	if !needsReapply {
+		logger.Info("RoleTemplate未修改，且没有新的Namespace，跳过处理", "RoleTemplate", rt.Name)
 		return ctrl.Result{}, nil
 	}
+
 	// 判断是否有改变：通过metadata.generation 字段会在 Spec 发生变更时自动递增去和status.lastAppliedGeneration判断
 	appliedDefaultNamespaces := map[string]bool{}
 	appliedCustomNamespaces := map[string]bool{}
@@ -129,9 +136,75 @@ func (r *RoleTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *RoleTemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rbacv1beta1.RoleTemplate{}).
-		Owns(&rbacv1.Role{}).       // 调用了控制器构建器的Owns方法，指定了这个控制器“拥有”的资源类型。在这里，它指定了rbacv1.Role类型。这意味着，当RoleTemplate资源发生变 化时，这个控制器将负责处理（或“调和”）所有由该RoleTemplate“拥有”的Role资源。这种关系通常用于表达一种层级或依赖关系，其中一个资源（在这里是RoleTemplate）定义了其他资源（在这里是Role）的配置或行为。
+		Owns(&rbacv1.Role{}). // 调用了控制器构建器的Owns方法，指定了这个控制器“拥有”的资源类型。在这里，它指定了rbacv1.Role类型。这意味着，当RoleTemplate资源发生变 化时，这个控制器将负责处理（或“调和”）所有由该RoleTemplate“拥有”的Role资源。这种关系通常用于表达一种层级或依赖关系，其中一个资源（在这里是RoleTemplate）定义了其他资源（在这里是Role）的配置或行为。
+		Watches(
+			&corev1.Namespace{}, // 监听 Namespace 变化
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				ns, ok := obj.(*corev1.Namespace)
+				if !ok {
+					return nil
+				}
+				return r.enqueueMatchingRoleTemplates(ctx, ns)
+			}),
+		).
 		Named("rbac-roletemplate"). // 这里指定了控制器的名称
 		Complete(r)
+}
+
+// 实现 enqueueMatchingRoleTemplates，找到匹配的 RoleTemplate
+func (r *RoleTemplateReconciler) enqueueMatchingRoleTemplates(ctx context.Context, ns *corev1.Namespace) []reconcile.Request {
+	logger := log.FromContext(ctx)
+	logger.Info("Enqueuing RoleTemplates for Namespace[监听namespace]")
+	// 获取所有 RoleTemplate
+	var roleTemplates rbacv1beta1.RoleTemplateList
+	if err := r.List(ctx, &roleTemplates); err != nil {
+		logger.Error(err, "Failed to list RoleTemplates")
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, rt := range roleTemplates.Items {
+		// 检查新 Namespace 是否符合 RoleTemplate 规则
+		if isIncluded(ns.Name, rt.Spec.DefaultRoles.Namespaces) ||
+			isIncluded(ns.Name, rt.Spec.CustomRoles.Namespaces) {
+			requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: rt.Name}})
+		}
+	}
+	return requests
+}
+
+/*
+这个方法会：
+
+	获取所有匹配 RoleTemplate 规则的 Namespace。
+	检查这些 Namespace 是否已经下发 Role（判断 Role 是否存在）。
+	如果 Namespace 没有 Role，就返回 true，触发重新下发。
+*/
+func hasNewNamespace(ctx context.Context, r *RoleTemplateReconciler, rt *rbacv1beta1.RoleTemplate) bool {
+	logger := log.FromContext(ctx)
+
+	// 获取 `RoleTemplate` 适用的 `Namespace`
+	namespaces, err := r.getApplicableNamespaces(ctx, rt.Spec.DefaultRoles.Namespaces, rt.Spec.DefaultRoles.ExcludedNamespaces)
+	if err != nil {
+		logger.Error(err, "Failed to list applicable namespaces")
+		return false
+	}
+
+	// 检查哪些 `Namespace` 还没有被 `RoleTemplate` 处理
+	for _, ns := range namespaces {
+		// 检查 `Role` 是否已经存在
+		roleList := &rbacv1.RoleList{}
+		err := r.List(ctx, roleList, client.InNamespace(ns), client.MatchingLabels{RoleTemplateLabel: rt.Name})
+		if err != nil {
+			logger.Error(err, "Failed to list roles in namespace", "namespace", ns)
+			continue
+		}
+		if len(roleList.Items) == 0 {
+			logger.Info("检测到新的Namespace需要下发角色", "namespace", ns)
+			return true
+		}
+	}
+	return false
 }
 
 // 清理模板同时，删除带有该模板标签的所有角色
@@ -177,6 +250,9 @@ func (r *RoleTemplateReconciler) processRoles(ctx context.Context, rt *rbacv1bet
 			if err := r.ensureRole(ctx, rt, role, ns, isCustom); err != nil {
 				return err
 			}
+			if err := r.ensureRoleBinding(ctx, rt, role, ns, isCustom); err != nil {
+				return err
+			}
 			appliedNamespaces[ns] = true
 		}
 	}
@@ -184,6 +260,7 @@ func (r *RoleTemplateReconciler) processRoles(ctx context.Context, rt *rbacv1bet
 	return nil
 }
 
+// 获取需要下发的namespace清单
 func (r *RoleTemplateReconciler) getApplicableNamespaces(ctx context.Context, included, excluded []string) ([]string, error) {
 	logger := log.FromContext(ctx)
 	var result []string
@@ -231,12 +308,14 @@ func isExcluded(name string, excluded map[string]struct{}) bool {
 }
 
 // 下发role到对应的namespace
-func (r *RoleTemplateReconciler) ensureRole(ctx context.Context, rt *rbacv1beta1.RoleTemplate, role rbacv1beta1.TemplateRole, namespace string, isCustom bool) error {
+func (r *RoleTemplateReconciler) ensureRole(ctx context.Context, rt *rbacv1beta1.RoleTemplate, temRole rbacv1beta1.TemplateRole, namespace string, isCustom bool) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Ensuring Role for RoleTemplate", "模板名称", rt.Name, "roleTemplate status信息", rt.Status)
 	var roleName string
 	if isCustom {
-		roleName = fmt.Sprintf("%s-%s", rt.Name, role.Name)
+		roleName = fmt.Sprintf("%s-%s", rt.Name, temRole.Name)
 	} else {
-		roleName = role.Name
+		roleName = temRole.Name
 	}
 
 	desiredRole := &rbacv1.Role{
@@ -248,10 +327,14 @@ func (r *RoleTemplateReconciler) ensureRole(ctx context.Context, rt *rbacv1beta1
 				RoleTemplateLabel: rt.Name,
 			},
 		},
-		Rules: role.Rules,
+		Rules: temRole.Rules,
 	}
 
 	// Set controller reference
+	// 	设置OwnerReference：它会在desiredRole对象的ObjectMeta中设置一个OwnerReference字段，指向rt（RoleTemplate）对象。这意味着desiredRole（Role）现在被认为是rt的一个子资源或“拥有者”资源。
+	// 	垃圾回收：Kubernetes的垃圾回收机制会检查这些所有权关系。如果一个资源的所有拥有者都被删除了，那么这个资源也会被自动删除。这对于保持集群的整洁和避免孤立的资源非常有用。
+	// 	事件和日志关联：在Kubernetes中，事件（Events）和日志（Logs）经常用于调试和监控。设置控制器引用可以帮助将子资源的事件和日志与它们的拥有者（即控制器）关联起来，从而更容易地追踪和理解系统的行为。
+	// 	权限和访问控制：在某些情况下，Kubernetes的RBAC（基于角色的访问控制）机制可能会利用这些所有权关系来做出访问决策。
 	if err := ctrl.SetControllerReference(rt, desiredRole, r.Scheme); err != nil {
 		return err
 	}
@@ -275,6 +358,58 @@ func (r *RoleTemplateReconciler) ensureRole(ctx context.Context, rt *rbacv1beta1
 		return r.Update(ctx, existingRole)
 	}
 
+	return nil
+}
+
+// 下发rolebinding到对应的namespace
+func (r *RoleTemplateReconciler) ensureRoleBinding(ctx context.Context, rt *rbacv1beta1.RoleTemplate, temRole rbacv1beta1.TemplateRole, namespace string, isCustom bool) error {
+	logger := log.FromContext(ctx)
+	logger.Info("Ensuring RoleBinding for RoleTemplate", "模板名称", rt.Name, "roleTemplate status信息", rt.Status)
+	var roleBindingName string
+	if isCustom {
+		roleBindingName = fmt.Sprintf("%s-%s", rt.Name, temRole.Name)
+	} else {
+		roleBindingName = temRole.Name
+	}
+	desiredRoleBinding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				ManagedByLabel:    ManagedByValue,
+				RoleTemplateLabel: rt.Name,
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     roleBindingName,
+		},
+	}
+
+	// Set controller reference
+	if err := ctrl.SetControllerReference(rt, desiredRoleBinding, r.Scheme); err != nil {
+		return err
+	}
+
+	existingRoleBinding := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{
+		Name:      desiredRoleBinding.Name,
+		Namespace: namespace,
+	}, existingRoleBinding)
+
+	if err != nil && errors.IsNotFound(err) {
+		return r.Create(ctx, desiredRoleBinding)
+	} else if err != nil {
+		return err
+	}
+
+	if !reflect.DeepEqual(existingRoleBinding.RoleRef, desiredRoleBinding.RoleRef) ||
+		!reflect.DeepEqual(existingRoleBinding.Labels, desiredRoleBinding.Labels) {
+		existingRoleBinding.RoleRef = desiredRoleBinding.RoleRef
+		existingRoleBinding.Labels = desiredRoleBinding.Labels
+		return r.Update(ctx, existingRoleBinding)
+	}
 	return nil
 }
 

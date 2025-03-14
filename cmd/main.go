@@ -37,8 +37,12 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	clusterv1beta1 "github.com/kubeants/kubeants-controller/api/cluster/v1beta1"
 	rbacv1beta1 "github.com/kubeants/kubeants-controller/api/rbac/v1beta1"
+	workspacev1beta1 "github.com/kubeants/kubeants-controller/api/workspace/v1beta1"
+	clustercontroller "github.com/kubeants/kubeants-controller/internal/controller/cluster"
 	rbaccontroller "github.com/kubeants/kubeants-controller/internal/controller/rbac"
+	workspacecontroller "github.com/kubeants/kubeants-controller/internal/controller/workspace"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +55,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(rbacv1beta1.AddToScheme(scheme))
+	utilruntime.Must(workspacev1beta1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1beta1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -207,6 +213,20 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RoleTemplate")
+		os.Exit(1)
+	}
+	if err = (&workspacecontroller.WorkspaceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Workspace")
+		os.Exit(1)
+	}
+	if err = (&clustercontroller.ClusterReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

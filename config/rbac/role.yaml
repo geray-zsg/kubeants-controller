@@ -5,6 +5,32 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - cluster.kubeants.io
+  resources:
+  - clusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.kubeants.io
+  resources:
+  - clusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cluster.kubeants.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - rbac.kubeants.io
   resources:
   - roletemplates
@@ -26,6 +52,32 @@ rules:
   - rbac.kubeants.io
   resources:
   - roletemplates/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - workspace.kubeants.io
+  resources:
+  - workspaces
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - workspace.kubeants.io
+  resources:
+  - workspaces/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - workspace.kubeants.io
+  resources:
+  - workspaces/status
   verbs:
   - get
   - patch
