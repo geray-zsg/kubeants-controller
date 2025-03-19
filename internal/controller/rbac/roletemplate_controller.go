@@ -290,6 +290,7 @@ func (r *RoleTemplateReconciler) getApplicableNamespaces(ctx context.Context, in
 	return result, nil
 }
 
+// 检查目标名称是否存在于允许列表（白名单）中
 func isIncluded(name string, included []string) bool {
 	if len(included) == 0 {
 		return false
@@ -302,6 +303,7 @@ func isIncluded(name string, included []string) bool {
 	return false
 }
 
+// 检查目标名称是否存在于排除列表（黑名单）中
 func isExcluded(name string, excluded map[string]struct{}) bool {
 	_, ok := excluded[name]
 	return ok
