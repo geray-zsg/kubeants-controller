@@ -1,0 +1,39 @@
+kind: RoleTemplate
+metadata:
+  name: role-template-kubeants
+spec:
+  autoApply: true  # 是否自动应用到新建的 namespace
+  defaultRoles:
+    namespaces: ["*"]  # 适用于所有 namespace
+    excludedNamespaces: ["kube-system"]  # 但不会应用到这些 namespace
+    roles:
+      - name: "admin"
+        rules:
+          - apiGroups: ["*"]
+            resources: ["*"]
+            verbs: ["*"]
+      - name: "edit"
+        rules:
+          - apiGroups: ["*"]
+            resources: ["*"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - name: "view"
+        rules:
+          - apiGroups: ["*"]
+            resources: ["*"]
+            verbs: ["get", "list", "watch"]
+
+  #customRoles:
+  #  namespaces: [""]  # 适用于所有 namespace
+  #  excludedNamespaces: ["*"]  # 但不会应用到这些 namespace
+  #  roles:
+  #    - name: "log-reader"
+  #      rules:
+  #        - apiGroups: [""]
+  #          resources: ["pods", "logs"]
+  #          verbs: ["get", "list", "watch"]
+  #    - name: "config-editor"
+  #      rules:
+  #        - apiGroups: ["apps"]
+  #          resources: ["deployments"]
+  #          verbs: ["update", "patch"]
