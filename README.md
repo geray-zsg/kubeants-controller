@@ -149,3 +149,22 @@ git remote add origin git@github.com:geray-zsg/kubeants-controller.git
 git branch -M main
 git push -u origin main
 ```
+
+使用 SSH 代替 HTTPS
+如果 HTTPS 无法正常工作，可以尝试使用 SSH 方式访问 GitHub：
+1.生成 SSH 密钥（如果尚未生成）：
+```bash
+# 这里邮箱对应github上账号的邮箱
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+```
+
+2.将公钥添加到 GitHub：
+登录 GitHub，进入 Settings > SSH and GPG keys，添加生成的公钥（~/.ssh/id_rsa.pub）。
+3.修改远程仓库地址为 SSH：
+```bash
+git remote set-url origin git@github.com:geray-zsg/kubeants-controller.git
+```
+再次尝试推送：
+```bash
+git push origin v1.4.0
+```
