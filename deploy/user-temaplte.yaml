@@ -1,0 +1,18 @@
+apiVersion: user.kubeants.io/v1beta1
+kind: User
+metadata:
+  name: "test1"
+spec:
+  state: "active"
+  name: "平台管理员"
+  email: "test1@ka.io"
+  phone: ""
+  password: "Root@123"
+  clusterroles: ["ws1","view"]  # 数组
+  roles:
+  - name: "admin"
+    namespaces: ["test1","test2"]
+  - name: "admin"
+    namespaceSelector:
+      matchLabels:
+        kubeants.io/workspace: ws1

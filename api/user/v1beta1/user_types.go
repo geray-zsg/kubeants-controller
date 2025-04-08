@@ -30,6 +30,16 @@ type RoleBinding struct {
 	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
 }
 
+// RoleBinding defines a role binding for a user in a namespace or set of namespaces
+type Roles struct {
+	// Name of the role binding
+	Name string `json:"name,omitempty"`
+	// Namespaces specifies the namespaces for the role binding
+	Namespaces []string `json:"namespaces,omitempty"`
+	// NamespaceSelector selects namespaces based on labels
+	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
+}
+
 // UserSpec defines the desired state of User.
 type UserSpec struct {
 	// State indicates the status of the user (e.g., Active, Inactive)
@@ -42,7 +52,11 @@ type UserSpec struct {
 	Phone string `json:"phone,omitempty"`
 	// Password is the hashed password of the user (not typically stored in a CRD, for security reasons)
 	Password string `json:"password,omitempty"`
-	// ClusterRole specifies the cluster-wide role binding for the user
+	// ClusterRoles specifies the cluster-wide role binding for the user
+	ClusterRoles []string `json:"clusterroles,omitempty"`
+	// Roles specifies the cluster-wide role binding for the user
+	Roles []Roles `json:"roles,omitempty"`
+	// ClusterRoleBinding specifies the cluster-wide role binding for the user
 	ClusterRoleBinding string `json:"clusterrolebinding,omitempty"`
 	// RoleBindings specifies the role bindings for the user in specific namespaces
 	RoleBindings []RoleBinding `json:"rolebindings,omitempty"`

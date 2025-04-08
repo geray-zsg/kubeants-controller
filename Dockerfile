@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 #FROM gcr.io/distroless/static:nonroot
-FROM alpine:3.18
+FROM alpine:3.21
 ARG BUILD_DATE                          # 从构建参数获取日期：docker build --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") -t geray/kubeants-controller:v1.3.1 .
 LABEL maintainer="Geray <geray.zhu@gmail.com>" \
     image.authors="geray" \

@@ -28,6 +28,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -70,6 +71,9 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// 定义资源关联的label
+	labels := map[string]string{"user.kubeants.io/user": user.Name}
+
 	// 检查是否有变化，如果没有变化则不下发
 	needsReapply := user.Status.LastAppliedGeneration != user.Generation
 	if !needsReapply {
@@ -89,7 +93,7 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	} else {
 		// User 即将被删除，清理资源
 		logger.Info("User is being deleted. Cleaning up resources.")
-		_, err := r.cleanupResources(ctx, &user)
+		_, err := r.cleanupResources(ctx, &user, labels)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -105,28 +109,28 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// 1.2.用户被禁用，回收权限
 	if user.Spec.State != "active" {
 		logger.Info("User is being  disabled. Cleaning up resources[回收权限]")
-		return r.cleanupResources(ctx, &user)
+		return r.cleanupResources(ctx, &user, labels)
 	}
 
-	// 2.处理 ServiceAccount
-	sa, err := r.reconcileServiceAccount(ctx, &user)
+	// 2.1.处理 ServiceAccount
+	sa, err := r.reconcileServiceAccount(ctx, &user, labels)
 	if err != nil {
 		logger.Error(err, "Failed to reconcile ServiceAccount[处理ServiceAccount失败]")
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile ServiceAccount: %w", err)
 	}
 
-	// 3.处理 ClusterRoleBinding
-	if user.Spec.ClusterRoleBinding != "" {
-		if err := r.reconcileClusterRoleBinding(ctx, &user, sa); err != nil {
-			logger.Error(err, "Failed to reconcile ClusterRoleBinding[处理ClusterRoleBinding失败]")
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile ClusterRoleBinding: %w", err)
+	// 2.2.处理clusterroles
+	if user.Spec.ClusterRoles != nil {
+		if _, err := r.reconcileClusterRoles(ctx, &user, sa, labels); err != nil {
+			logger.Error(err, "Failed to reconcile ClusterRoles[处理ClusterRoles失败]")
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile ClusterRoles: %w", err)
 		}
 	}
-
-	// 4.处理 RoleBindings
-	if user.Spec.RoleBindings != nil {
-		if err := r.reconcileRoleBindings(ctx, &user, sa); err != nil {
-			return ctrl.Result{}, err
+	// 2.3.处理roles
+	if user.Spec.Roles != nil {
+		if _, err := r.reconcileRoles(ctx, &user, sa, labels); err != nil {
+			logger.Error(err, "Failed to reconcile Roles[处理Roles失败]")
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile Roles: %w", err)
 		}
 	}
 
@@ -144,6 +148,15 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	r.updateStatus(ctx, &user, sa.Name)
 	// ✅ 增加 `RequeueAfter` 避免死循环
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *UserReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&userv1beta1.User{}).
+		Named("kubeants-user").
+		Complete(r)
 }
 
 // 更新status信息
@@ -168,22 +181,14 @@ func (r *UserReconciler) updateStatus(ctx context.Context, user *userv1beta1.Use
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *UserReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&userv1beta1.User{}).
-		Named("kubeants-user").
-		Complete(r)
-}
-
 // 动态生成与User关联的serviceaccount，并注入OwnerReference实现级联删除
-func (r *UserReconciler) reconcileServiceAccount(ctx context.Context, user *userv1beta1.User) (*corev1.ServiceAccount, error) {
+func (r *UserReconciler) reconcileServiceAccount(ctx context.Context, user *userv1beta1.User, labels map[string]string) (*corev1.ServiceAccount, error) {
 	logger := log.FromContext(ctx)
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "user-" + user.Name, // 唯一名称，如 user-admin
 			Namespace: "default",           // 指定 SA 的命名空间
-			Labels:    map[string]string{"owner": user.Name},
+			Labels:    labels,
 		},
 	}
 
@@ -196,167 +201,136 @@ func (r *UserReconciler) reconcileServiceAccount(ctx context.Context, user *user
 		return nil
 	})
 
-	logger.Info("ServiceAccount reconciled", "operation", op)
+	logger.Info("✅ ServiceAccount reconciled", "operation", op)
 	return sa, err
 }
 
-// 根据 spec.clusterrolebinding 字段动态绑定集群级权限：
-func (r *UserReconciler) reconcileClusterRoleBinding(ctx context.Context, user *userv1beta1.User, sa *corev1.ServiceAccount) error {
+// reconcileClusterRoles 处理 ClusterRoles 生成对应的clusterrolebinding
+func (r *UserReconciler) reconcileClusterRoles(ctx context.Context, user *userv1beta1.User, sa *corev1.ServiceAccount, labels map[string]string) (crbs []*rbacv1.ClusterRoleBinding, err error) {
 	logger := log.FromContext(ctx)
+	// crbList := make([]*rbacv1.ClusterRoleBinding, 0)
 
-	// 判断对应的clusterrolebinding是否存在
-	crb := &rbacv1.ClusterRoleBinding{}
-	err := r.Get(ctx, client.ObjectKey{Name: user.Spec.ClusterRoleBinding}, crb)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("ClusterRoleBinding not found", "clusterrolebinding", user.Spec.ClusterRoleBinding)
-			return fmt.Errorf("ClusterRoleBinding %s not found", user.Spec.ClusterRoleBinding)
-		}
-		return err
-	}
+	for _, clusterRole := range user.Spec.ClusterRoles {
+		// 构建 ClusterRoleBinding 名称
+		crbName := fmt.Sprintf("user-%s-%s", clusterRole, user.Name)
 
-	// 检查 `SA` 是否已存在于 `Subjects`
-	for _, subject := range crb.Subjects {
-		if subject.Kind == "ServiceAccount" && subject.Name == sa.Name && subject.Namespace == sa.Namespace {
-			// SA 已经在 ClusterRoleBinding 里，不需要更新
-			logger.Info("ServiceAccount already exists in ClusterRoleBinding,not need to update")
-			return nil
-		}
-	}
-
-	// ✅ 追加 `SA` 到 `Subjects`，而不是覆盖
-	crb.Subjects = append(crb.Subjects, rbacv1.Subject{
-		Kind:      "ServiceAccount",
-		Name:      sa.Name,
-		Namespace: sa.Namespace,
-	})
-
-	// ✅ 更新 `ClusterRoleBinding`
-	return r.Update(ctx, crb)
-}
-
-// 当 User 被删除时，我们需要从 ClusterRoleBinding.Subjects 中移除 SA
-func (r *UserReconciler) removeUserFromClusterRoleBinding(ctx context.Context, user *userv1beta1.User) error {
-	logger := log.FromContext(ctx)
-	// 检查clusterrolebinding是否存在
-	crb := &rbacv1.ClusterRoleBinding{}
-	if err := r.Get(ctx, client.ObjectKey{Name: user.Spec.ClusterRoleBinding}, crb); err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("ClusterRoleBinding not found")
-			return nil
-		}
-		return err
-	}
-
-	// 过滤掉 `User` 绑定的 `SA`
-	var updateSubjects []rbacv1.Subject
-	for _, subject := range crb.Subjects {
-		if !(subject.Kind == "ServiceAccount" && subject.Name == "user-"+user.Name) {
-			updateSubjects = append(updateSubjects, subject)
-		}
-	}
-
-	// 如果 Subjects 为空，则不删除 clusterrolebinding，只清空Subjects
-	if len(updateSubjects) == 0 {
-		crb.Subjects = nil
-	} else {
-		crb.Subjects = updateSubjects
-	}
-
-	return r.Update(ctx, crb)
-}
-
-// 移除 RoleBinding 里的 SA
-func (r *UserReconciler) removeUserFromRoleBindings(ctx context.Context, user *userv1beta1.User) error {
-	logger := log.FromContext(ctx)
-
-	rbList := &rbacv1.RoleBindingList{}
-	if err := r.List(ctx, rbList, client.MatchingLabels{"owner": user.Name}); err != nil {
-		return err
-	}
-
-	for _, rb := range rbList.Items {
-		var updatedSubjects []rbacv1.Subject
-		for _, subject := range rb.Subjects {
-			if !(subject.Kind == "ServiceAccount" && subject.Name == "user-"+user.Name) {
-				updatedSubjects = append(updatedSubjects, subject)
-			}
-		}
-
-		// 如果 `Subjects` 为空，则清空 `RoleBinding`
-		if len(updatedSubjects) == 0 {
-			rb.Subjects = nil
-		} else {
-			rb.Subjects = updatedSubjects
-		}
-
-		if err := r.Update(ctx, &rb); err != nil {
-			logger.Error(err, "Failed to update RoleBinding", "name", rb.Name, "namespace", rb.Namespace)
-			return err
-		}
-	}
-
-	return nil
-}
-
-// 根据用户中的spec.rolebindings字段动态绑定命名空间级权限(支持namesapce标签批量注入)：
-func (r *UserReconciler) reconcileRoleBindings(ctx context.Context, user *userv1beta1.User, sa *corev1.ServiceAccount) error {
-	logger := log.FromContext(ctx)
-	logger.Info("Processing RoleBindings")
-
-	for _, rb := range user.Spec.RoleBindings {
-		var namespaces []string
-
-		// 处理 namespaces 数组
-		if rb.Namespaces != nil {
-			namespaces = append(namespaces, rb.Namespaces...)
-		}
-
-		// 处理 namespaceSelector
-		if rb.NamespaceSelector != nil && rb.NamespaceSelector.MatchLabels != nil {
-			matchedNamespaces, err := r.getNamespacesBySelector(ctx, rb.NamespaceSelector.MatchLabels)
-			if err != nil {
-				logger.Error(err, "Failed to get namespaces by selector", "selector", rb.NamespaceSelector.MatchLabels)
-				return err
-			}
-			namespaces = append(namespaces, matchedNamespaces...)
-		}
-
-		// 遍历所有匹配的 namespace，处理 RoleBinding
-		for _, ns := range namespaces {
-			rbObj := &rbacv1.RoleBinding{}
-			err := r.Get(ctx, client.ObjectKey{Name: rb.Name, Namespace: ns}, rbObj)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					logger.Info("RoleBinding not found, skipping", "name", rb.Name, "namespace", ns)
-					continue
-				}
-				logger.Error(err, "Failed to get RoleBinding", "name", rb.Name, "namespace", ns)
-				return err
-			}
-
-			// 确保 SA 存在于 RoleBinding 的 Subjects 中
-			found := false
-			for _, subject := range rbObj.Subjects {
-				if subject.Kind == "ServiceAccount" && subject.Name == sa.Name && subject.Namespace == sa.Namespace {
-					found = true
-					break
-				}
-			}
-			if !found {
-				rbObj.Subjects = append(rbObj.Subjects, rbacv1.Subject{
+		// 构建 ClusterRoleBinding 对象
+		crbObj := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   crbName,
+				Labels: labels,
+			},
+			Subjects: []rbacv1.Subject{
+				{
 					Kind:      "ServiceAccount",
 					Name:      sa.Name,
 					Namespace: sa.Namespace,
-				})
-				if err := r.Update(ctx, rbObj); err != nil {
-					return err
-				}
-			}
+				},
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "ClusterRole",
+				Name:     clusterRole,
+			},
 		}
+		// 创建或更新 clusterrolebinding
+		opResult, err := ctrl.CreateOrUpdate(ctx, r.Client, crbObj, func() error {
+			// 设置OwnerReference 确保删除User 是能级联删除ClusterRoleBinding
+			if err := ctrl.SetControllerReference(user, crbObj, r.Scheme); err != nil {
+				logger.Error(err, "Failed to set controller reference[设置OwnerReference失败]")
+				return err
+			}
+			return nil
+		})
+
+		if err != nil {
+			logger.Error(err, "Failed to create or update ClusterRoleBinding", "name", crbName)
+			return nil, err // 返回错误，终止处理
+		}
+
+		// 记录操作结果
+		logger.Info("✅ ClusterRoleBinding reconciled", "name", crbName, "operation", opResult)
+
+		// 将创建的 ClusterRoleBinding 添加到结果列表
+		crbs = append(crbs, crbObj)
+
 	}
 
-	return nil
+	return crbs, nil
+}
+
+// reconcileRoles 处理 Roles ,支持标签
+func (r *UserReconciler) reconcileRoles(ctx context.Context, user *userv1beta1.User, sa *corev1.ServiceAccount, labels map[string]string) (rbs []*rbacv1.RoleBinding, err error) {
+	logger := log.FromContext(ctx)
+
+	for _, role := range user.Spec.Roles {
+		// 1.处理 namespaceSelector 逻辑，获取匹配的 Namespace 列表
+		var namespaceList []string
+
+		// 2.处理namespaceList 数组
+		if role.Namespaces != nil {
+			namespaceList = append(namespaceList, role.Namespaces...)
+		}
+
+		// 3.处理 namespaceSelector
+		if role.NamespaceSelector != nil && role.NamespaceSelector.MatchLabels != nil {
+			matchedNamespaces, err := r.getNamespacesBySelector(ctx, role.NamespaceSelector.MatchLabels) // 获取匹配的Namespace
+			if err != nil {
+				logger.Error(err, "Failed to get namespaces by selector[根据Selector获取Namespace失败]", "selector", role.NamespaceSelector.MatchLabels)
+				return nil, err
+			}
+			namespaceList = append(namespaceList, matchedNamespaces...)
+		}
+
+		// 2.遍历 namespaceList，为每个 Namespace 创建 RoleBinding
+		for _, ns := range namespaceList {
+			// 构建 RoleBinding 名称
+			rbName := fmt.Sprintf("user-%s-%s", role.Name, user.Name)
+
+			// 构建rolebinding 对象
+			rbObj := &rbacv1.RoleBinding{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rbName,
+					Namespace: ns,
+					Labels:    labels,
+				},
+				Subjects: []rbacv1.Subject{
+					{
+						Kind:      "ServiceAccount",
+						Name:      sa.Name,
+						Namespace: sa.Namespace,
+					},
+				},
+				RoleRef: rbacv1.RoleRef{
+					APIGroup: "rbac.authorization.k8s.io",
+					Kind:     "ClusterRole",
+					Name:     role.Name,
+				},
+			}
+
+			// 创建或更新 rolebinding
+			opResult, err := ctrl.CreateOrUpdate(ctx, r.Client, rbObj, func() error {
+				// 设置OwnerReference 确保删除User 是能级联删除RoleBinding
+				if err := ctrl.SetControllerReference(user, rbObj, r.Scheme); err != nil {
+					logger.Error(err, "Failed to set controller reference[设置OwnerReference失败]")
+					return err
+				}
+				return nil
+			})
+
+			if err != err {
+				logger.Error(err, "Failed to create or update RoleBinding", "name", rbName)
+				return nil, err // 返回错误，终止处理
+			}
+
+			// 记录操作结果
+			logger.Info("✅ RoleBinding reconciled", "name", rbName, "namespace", ns, "operation", opResult)
+			// 将创建的 rolebinding 添加到返回结果列表
+			rbs = append(rbs, rbObj)
+		}
+
+	}
+	return rbs, nil
 }
 
 // 获取符合 selector 规则的 namespaces
@@ -375,44 +349,102 @@ func (r *UserReconciler) getNamespacesBySelector(ctx context.Context, selector m
 	return namespaces, nil
 }
 
-// User被删除或者禁用时回收权限
-func (r *UserReconciler) cleanupResources(ctx context.Context, user *userv1beta1.User) (ctrl.Result, error) {
+func (r *UserReconciler) cleanupResources(ctx context.Context, user *userv1beta1.User, labelMap map[string]string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+	selector := labels.SelectorFromSet(labels.Set(labelMap))
+	var errs []error // 收集所有错误，最后一起返回
 
-	// ✅ 先移除 `ClusterRoleBinding` 里的 `SA`
-	if err := r.removeUserFromClusterRoleBinding(ctx, user); err != nil {
-		logger.Error(err, "Failed to remove SA from ClusterRoleBinding")
-		return ctrl.Result{}, err
-	}
-
-	// ✅ 先移除 `RoleBinding` 里的 `SA`
-	if err := r.removeUserFromRoleBindings(ctx, user); err != nil {
-		logger.Error(err, "Failed to remove SA from RoleBindings")
-		return ctrl.Result{}, err
-	}
-
-	// 删除 ClusterRoleBinding
-	crbList := &rbacv1.ClusterRoleBindingList{}
-	if err := r.List(ctx, crbList, client.MatchingLabels{"owner": user.Name}); err != nil {
-		return ctrl.Result{}, err
-	}
-	for _, crb := range crbList.Items {
-		if err := r.Delete(ctx, &crb); err != nil {
-			return ctrl.Result{}, err
+	// ✅ 1. 删除匹配标签的 ServiceAccount（所有 Namespace）
+	saList := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, saList, &client.ListOptions{
+		LabelSelector: selector,
+		Namespace:     "", // 所有命名空间
+	}); err != nil {
+		logger.Error(err, "Failed to list ServiceAccount")
+		errs = append(errs, err)
+	} else {
+		for _, sa := range saList.Items {
+			if err := r.Delete(ctx, &sa); client.IgnoreNotFound(err) != nil {
+				logger.Error(err, "Failed to delete ServiceAccount", "name", sa.Name, "namespace", sa.Namespace)
+				errs = append(errs, err)
+			} else {
+				logger.Info("Deleted ServiceAccount", "name", sa.Name, "namespace", sa.Namespace)
+			}
 		}
 	}
 
-	// ✅ 删除 `ServiceAccount` , 当前使用的是硬编码，建议改进成lable删除sa
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-" + user.Name,
-			Namespace: "default",
-		},
+	// ✅ 2. 删除匹配标签的 ClusterRoleBinding
+	crbList := &rbacv1.ClusterRoleBindingList{}
+	if err := r.List(ctx, crbList, client.MatchingLabels(labelMap)); err != nil {
+		logger.Error(err, "Failed to list ClusterRoleBinding")
+		errs = append(errs, err)
+	} else {
+		for _, crb := range crbList.Items {
+			if err := r.Delete(ctx, &crb); client.IgnoreNotFound(err) != nil {
+				logger.Error(err, "Failed to delete ClusterRoleBinding", "name", crb.Name)
+				errs = append(errs, err)
+			} else {
+				logger.Info("Deleted ClusterRoleBinding", "name", crb.Name)
+			}
+		}
 	}
-	if err := r.Delete(ctx, sa); client.IgnoreNotFound(err) != nil {
-		return ctrl.Result{}, err
+
+	// ✅ 3. 删除匹配标签的 RoleBinding（所有涉及到的 Namespace）
+	seenNamespaces := map[string]bool{} // 防止重复处理
+
+	for _, role := range user.Spec.Roles {
+		var namespaceList []string
+
+		// 指定的 namespaces
+		if role.Namespaces != nil {
+			namespaceList = append(namespaceList, role.Namespaces...)
+		}
+
+		// 匹配 label 的 namespace
+		if role.NamespaceSelector != nil && role.NamespaceSelector.MatchLabels != nil {
+			matchedNamespaces, err := r.getNamespacesBySelector(ctx, role.NamespaceSelector.MatchLabels)
+			if err != nil {
+				logger.Error(err, "Failed to get namespaces by selector")
+				errs = append(errs, err)
+				continue
+			}
+			namespaceList = append(namespaceList, matchedNamespaces...)
+		}
+
+		// 删除每个命名空间中的 RoleBinding
+		for _, ns := range namespaceList {
+			if seenNamespaces[ns] {
+				continue // 已处理
+			}
+			seenNamespaces[ns] = true
+
+			rbList := &rbacv1.RoleBindingList{}
+			if err := r.List(ctx, rbList, &client.ListOptions{
+				LabelSelector: selector,
+				Namespace:     ns,
+			}); err != nil {
+				logger.Error(err, "Failed to list RoleBinding", "namespace", ns)
+				errs = append(errs, err)
+				continue
+			}
+
+			for _, rb := range rbList.Items {
+				if err := r.Delete(ctx, &rb); client.IgnoreNotFound(err) != nil {
+					logger.Error(err, "Failed to delete RoleBinding", "name", rb.Name, "namespace", ns)
+					errs = append(errs, err)
+				} else {
+					logger.Info("Deleted RoleBinding", "name", rb.Name, "namespace", ns)
+				}
+			}
+		}
 	}
-	logger.Info("User cleanup completed.", "User", user.Name)
+
+	// 🔚 总结处理
+	if len(errs) > 0 {
+		return ctrl.Result{}, fmt.Errorf("failed to cleanup some resources: %v", errs)
+	}
+
+	logger.Info("✅ Successfully cleaned up all RBAC resources for User", "user", user.Name)
 	return ctrl.Result{}, nil
 }
 
