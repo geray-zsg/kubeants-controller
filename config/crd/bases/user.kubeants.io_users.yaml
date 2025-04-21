@@ -21,6 +21,9 @@ spec:
     - jsonPath: .spec.email
       name: Email
       type: string
+    - jsonPath: .spec.PlatformRoles
+      name: PlatformRoles
+      type: string
     - jsonPath: .spec.state
       name: State
       type: string
@@ -74,6 +77,9 @@ spec:
                 type: string
               phone:
                 description: Phone is the phone number of the user
+                type: string
+              platformRoles:
+                description: 绑定的平台角色
                 type: string
               rolebindings:
                 description: RoleBindings specifies the role bindings for the user

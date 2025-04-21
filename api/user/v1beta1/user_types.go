@@ -46,6 +46,8 @@ type UserSpec struct {
 	State string `json:"state,omitempty"`
 	// Name is the display name of the user
 	Name string `json:"name,omitempty"`
+	// 绑定的平台角色
+	PlatformRoles string `json:"platformRoles,omitempty"`
 	// Email is the email address of the user
 	Email string `json:"email,omitempty"`
 	// Phone is the phone number of the user
@@ -79,6 +81,7 @@ type UserStatus struct {
 // +kubebuilder:resource:path=users,scope=Cluster
 // +kubebuilder:printcolumn:name="Phone",type="string",JSONPath=".spec.phone"
 // +kubebuilder:printcolumn:name="Email",type="string",JSONPath=".spec.email"
+// +kubebuilder:printcolumn:name="PlatformRoles",type="string",JSONPath=".spec.PlatformRoles"
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.spec.state`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // User is the Schema for the users API.
