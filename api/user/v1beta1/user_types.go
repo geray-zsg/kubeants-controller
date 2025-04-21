@@ -81,7 +81,7 @@ type UserStatus struct {
 // +kubebuilder:resource:path=users,scope=Cluster
 // +kubebuilder:printcolumn:name="Phone",type="string",JSONPath=".spec.phone"
 // +kubebuilder:printcolumn:name="Email",type="string",JSONPath=".spec.email"
-// +kubebuilder:printcolumn:name="PlatformRoles",type="string",JSONPath=".spec.PlatformRoles"
+// +kubebuilder:printcolumn:name="PlatformRoles",type="string",JSONPath=".spec.platformRoles"
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.spec.state`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // User is the Schema for the users API.

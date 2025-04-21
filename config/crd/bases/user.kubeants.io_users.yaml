@@ -21,7 +21,7 @@ spec:
     - jsonPath: .spec.email
       name: Email
       type: string
-    - jsonPath: .spec.PlatformRoles
+    - jsonPath: .spec.platformRoles
       name: PlatformRoles
       type: string
     - jsonPath: .spec.state

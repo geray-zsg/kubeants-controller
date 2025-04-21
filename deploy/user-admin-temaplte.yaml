@@ -6,6 +6,7 @@ spec:
   state: "active"
   name: "平台管理员"
   email: "admin@ka.io"
+  platformRoles: "plat-admin"
   phone: ""
   password: "Root@123"
   clusterroles: ["admin"]  # 数组
