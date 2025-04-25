@@ -21,6 +21,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -39,10 +40,13 @@ import (
 
 	clusterv1beta1 "github.com/kubeants/kubeants-controller/api/cluster/v1beta1"
 	rbacv1beta1 "github.com/kubeants/kubeants-controller/api/rbac/v1beta1"
+	userv1beta1 "github.com/kubeants/kubeants-controller/api/user/v1beta1"
 	workspacev1beta1 "github.com/kubeants/kubeants-controller/api/workspace/v1beta1"
 	clustercontroller "github.com/kubeants/kubeants-controller/internal/controller/cluster"
 	rbaccontroller "github.com/kubeants/kubeants-controller/internal/controller/rbac"
+	usercontroller "github.com/kubeants/kubeants-controller/internal/controller/user"
 	workspacecontroller "github.com/kubeants/kubeants-controller/internal/controller/workspace"
+	"github.com/kubeants/kubeants-controller/util"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -57,6 +61,7 @@ func init() {
 	utilruntime.Must(rbacv1beta1.AddToScheme(scheme))
 	utilruntime.Must(workspacev1beta1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1beta1.AddToScheme(scheme))
+	utilruntime.Must(userv1beta1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -208,27 +213,55 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&rbaccontroller.RoleTemplateReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RoleTemplate")
-		os.Exit(1)
+	// 注册 Controller（controller.UserReconciler{}.SetupWithManager(mgr)）
+	// 获取启用的控制器列表（逗号分隔）
+	enabledControllers := os.Getenv("ENABLED_CONTROLLERS")
+	if enabledControllers == "" {
+		// 默认启用所有控制器（保持原有行为）
+		enabledControllers = "RoleTemplate,Workspace,Cluster,User"
 	}
-	if err = (&workspacecontroller.WorkspaceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Workspace")
-		os.Exit(1)
+	enabledList := strings.Split(enabledControllers, ",")
+	// 检查是否启用 RoleTemplate 控制器
+	if util.Contains("RoleTemplate", enabledList) {
+		if err = (&rbaccontroller.RoleTemplateReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "RoleTemplate")
+			os.Exit(1)
+		}
 	}
-	if err = (&clustercontroller.ClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
-		os.Exit(1)
+	// 检查是否启用 Workspace 控制器
+	if util.Contains("Workspace", enabledList) {
+		if err = (&workspacecontroller.WorkspaceReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Workspace")
+			os.Exit(1)
+		}
 	}
+	// 检查是否启用 Cluster 控制器
+	if util.Contains("Cluster", enabledList) {
+		if err = (&clustercontroller.ClusterReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Cluster")
+			os.Exit(1)
+		}
+	}
+	// 检查是否启用 User 控制器
+	if util.Contains("User", enabledList) {
+		if err = (&usercontroller.UserReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "User")
+			os.Exit(1)
+		}
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

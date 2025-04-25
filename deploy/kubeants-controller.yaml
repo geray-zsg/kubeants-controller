@@ -1,0 +1,89 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubeants-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubeants-controller
+  namespace: kubeants-system
+secrets:
+- name: kubeants-controller-token-vfhhp
+---
+# ClusterRole for Controller Manager
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubeants-controller
+rules:
+  - apiGroups: ["rbac.kubeants.io"]
+    resources: ["roletemplates"]
+    verbs: ["*"]
+  - apiGroups: ["rbac.kubeants.io"]
+    resources: ["roletemplates/status"]
+    verbs: ["*"]
+  - apiGroups: ["user.kubeants.io"]
+    resources: ["users"]
+    verbs: ["*"]
+  - apiGroups: ["user.kubeants.io"]
+    resources: ["users/status"]
+    verbs: ["*"]
+  - apiGroups: ["workspace.kubeants.io"]
+    resources: ["workspaces","workspaces/status"]
+    verbs: ["*"]
+  - apiGroups: ["cluster.kubeants.io"]
+    resources: ["clusters","clusters/status"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    #verbs: ["get", "list", "watch","create","update","patch"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["secrets","serviceaccounts"]
+    verbs: ["*"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: [ "roles","rolebindings","clusterroles","clusterrolebindings"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubeants-controller
+subjects:
+  - kind: ServiceAccount
+    name: kubeants-controller
+    namespace: kubeants-system  # 修改为Controller所在Namespace
+roleRef:
+  kind: ClusterRole
+  name: kubeants-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kubeants-controller
+  name: kubeants-controller
+  namespace: kubeants-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubeants-controller
+  template:
+    metadata:
+      labels:
+        app: kubeants-controller
+    spec:
+      containers:
+        - image: "registry.cn-hangzhou.aliyuncs.com/geray/kubeants-controller:v1.0.0"
+          imagePullPolicy: IfNotPresent
+          name: kubeants-controller
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      serviceAccount: kubeants-controller
+      serviceAccountName: kubeants-controller
+

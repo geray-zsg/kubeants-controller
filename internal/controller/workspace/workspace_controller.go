@@ -59,6 +59,7 @@ func (r *WorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Info("Workspace[业务空间] not found")
 			return r.removeNsLabels(ctx, req.Name)
 		}
+		logger.Error(err, "Failed to get Workspace[业务空间]")
 	}
 	logger.Info("workspace[业务空间]")
 	return ctrl.Result{}, nil

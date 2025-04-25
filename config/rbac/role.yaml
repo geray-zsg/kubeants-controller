@@ -57,6 +57,32 @@ rules:
   - patch
   - update
 - apiGroups:
+  - user.kubeants.io
+  resources:
+  - users
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - user.kubeants.io
+  resources:
+  - users/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - user.kubeants.io
+  resources:
+  - users/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - workspace.kubeants.io
   resources:
   - workspaces

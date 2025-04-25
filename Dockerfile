@@ -1,20 +1,26 @@
 # Build the manager binary
 FROM docker.io/golang:1.23 AS builder
-ARG TARGETOS
-ARG TARGETARCH
 
+#ARG TARGETOS
+#ARG TARGETARCH
+
+ARG TARGETOS=linux  # 明确变量默认值，否则可以通过命令构建：ocker build --build-arg TARGETOS=linux --build-arg TARGETARCH=amd64 -t my-image .
+ARG TARGETARCH=amd64
+
+ARG GOPROXY=https://goproxy.io,direct
 WORKDIR /workspace
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
-RUN go mod download
+RUN go mod tidy && go mod download
 
 # Copy the go source
-COPY cmd/main.go cmd/main.go
-COPY api/ api/
-COPY internal/ internal/
+# COPY cmd/main.go cmd/main.go
+# COPY api/ api/
+# COPY internal/ internal/
+COPY . .
 
 # Build
 # the GOARCH has not a default value to allow the binary be built according to the host where the command
@@ -22,10 +28,18 @@ COPY internal/ internal/
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+# RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+#FROM gcr.io/distroless/static:nonroot
+FROM alpine:3.21
+ARG BUILD_DATE                          # 从构建参数获取日期：docker build --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") -t geray/kubeants-controller:v1.3.1 .
+LABEL maintainer="Geray <geray.zhu@gmail.com>" \
+    image.authors="geray" \
+    image.description="Application packaged by Geray" \
+    image.vendor="VMware, Inc." \
+    build.date=${BUILD_DATE}   
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532

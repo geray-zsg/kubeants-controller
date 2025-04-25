@@ -5,6 +5,7 @@ resources:
 - bases/rbac.kubeants.io_roletemplates.yaml
 - bases/workspace.kubeants.io_workspaces.yaml
 - bases/cluster.kubeants.io_clusters.yaml
+- bases/user.kubeants.io_users.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

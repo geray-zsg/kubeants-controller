@@ -3,4 +3,5 @@ resources:
 - rbac_v1beta1_roletemplate.yaml
 - workspace_v1beta1_workspace.yaml
 - cluster_v1beta1_cluster.yaml
+- user_v1beta1_user.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
