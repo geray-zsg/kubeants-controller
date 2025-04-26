@@ -1,0 +1,8 @@
+apiVersion: user.kubeants.io/v1beta1
+kind: User
+metadata:
+  name: "user1"
+spec:
+  kubeconfig: <base64加密后的内容>
+  state: "active"  # or disable
+    

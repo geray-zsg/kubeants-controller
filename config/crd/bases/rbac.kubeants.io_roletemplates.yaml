@@ -47,199 +47,129 @@ spec:
           metadata:
             type: object
           spec:
-            description: RoleTemplateSpec 定义了 RoleTemplate 的期望状态
             properties:
               autoApply:
-                description: 是否自动应用到新建的 namespace
                 type: boolean
-              customRoles:
-                description: CustomRoles 允许用户自定义角色，并在符合条件的 namespace 下发
-                properties:
-                  excludedNamespaces:
-                    description: 排除的 namespace 列表
-                    items:
-                      type: string
-                    type: array
-                  namespaces:
-                    description: 需要下发的 namespace 列表，支持 * 代表所有 namespace
-                    items:
-                      type: string
-                    type: array
-                  roles:
-                    description: 角色定义
-                    items:
-                      description: RoleDefinition 定义角色名称及其规则
-                      properties:
-                        name:
-                          description: |-
-                            角色名称
-                            DefaultRoles 下发后的role名称则是该名称
-                            CustomRoles 下发后的role名称则是 roleTemplate模板名称+该规则名称
-                          type: string
-                        rules:
-                          description: 角色规则
-                          items:
-                            description: |-
-                              PolicyRule holds information that describes a policy rule, but does not contain information
-                              about who the rule applies to or which namespace the rule applies to.
-                            properties:
-                              apiGroups:
-                                description: |-
-                                  APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
-                                  the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              nonResourceURLs:
-                                description: |-
-                                  NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
-                                  Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
-                                  Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              resourceNames:
-                                description: ResourceNames is an optional white list
-                                  of names that the rule applies to.  An empty set
-                                  means that everything is allowed.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              resources:
-                                description: Resources is a list of resources this
-                                  rule applies to. '*' represents all resources.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              verbs:
-                                description: Verbs is a list of Verbs that apply to
-                                  ALL the ResourceKinds contained in this rule. '*'
-                                  represents all verbs.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            required:
-                            - verbs
-                            type: object
-                          type: array
-                      required:
-                      - name
-                      - rules
-                      type: object
-                    type: array
-                required:
-                - namespaces
-                type: object
-              defaultRoles:
-                description: DefaultRoles 在所有符合条件的 namespace 中自动下发
-                properties:
-                  excludedNamespaces:
-                    description: 排除的 namespace 列表
-                    items:
-                      type: string
-                    type: array
-                  namespaces:
-                    description: 需要下发的 namespace 列表，支持 * 代表所有 namespace
-                    items:
-                      type: string
-                    type: array
-                  roles:
-                    description: 角色定义
-                    items:
-                      description: RoleDefinition 定义角色名称及其规则
-                      properties:
-                        name:
-                          description: |-
-                            角色名称
-                            DefaultRoles 下发后的role名称则是该名称
-                            CustomRoles 下发后的role名称则是 roleTemplate模板名称+该规则名称
-                          type: string
-                        rules:
-                          description: 角色规则
-                          items:
-                            description: |-
-                              PolicyRule holds information that describes a policy rule, but does not contain information
-                              about who the rule applies to or which namespace the rule applies to.
-                            properties:
-                              apiGroups:
-                                description: |-
-                                  APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
-                                  the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              nonResourceURLs:
-                                description: |-
-                                  NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
-                                  Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
-                                  Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              resourceNames:
-                                description: ResourceNames is an optional white list
-                                  of names that the rule applies to.  An empty set
-                                  means that everything is allowed.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              resources:
-                                description: Resources is a list of resources this
-                                  rule applies to. '*' represents all resources.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                              verbs:
-                                description: Verbs is a list of Verbs that apply to
-                                  ALL the ResourceKinds contained in this rule. '*'
-                                  represents all verbs.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            required:
-                            - verbs
-                            type: object
-                          type: array
-                      required:
-                      - name
-                      - rules
-                      type: object
-                    type: array
-                required:
-                - namespaces
-                type: object
-            required:
-            - autoApply
-            type: object
-          status:
-            description: RoleTemplateStatus 记录已应用的 namespace 信息
-            properties:
-              appliedCustomRolesNamespace:
-                description: 记录 CustomRoles 已应用的 namespace
+              excludedNamespaces:
                 items:
                   type: string
                 type: array
-              appliedDefaultRolesNamespace:
-                description: 记录 DefaultRoles 已应用的 namespace
+              namespaceSelector:
+                description: |-
+                  A label selector is a label query over a set of resources. The result of matchLabels and
+                  matchExpressions are ANDed. An empty label selector matches all objects. A null
+                  label selector matches no objects.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              namespaces:
+                items:
+                  type: string
+                type: array
+              rules:
+                items:
+                  description: |-
+                    PolicyRule holds information that describes a policy rule, but does not contain information
+                    about who the rule applies to or which namespace the rule applies to.
+                  properties:
+                    apiGroups:
+                      description: |-
+                        APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                        the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    nonResourceURLs:
+                      description: |-
+                        NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                        Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
+                        Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    resourceNames:
+                      description: ResourceNames is an optional white list of names
+                        that the rule applies to.  An empty set means that everything
+                        is allowed.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    resources:
+                      description: Resources is a list of resources this rule applies
+                        to. '*' represents all resources.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    verbs:
+                      description: Verbs is a list of Verbs that apply to ALL the
+                        ResourceKinds contained in this rule. '*' represents all verbs.
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                  required:
+                  - verbs
+                  type: object
+                type: array
+            required:
+            - autoApply
+            - rules
+            type: object
+          status:
+            properties:
+              appliedNamespaces:
                 items:
                   type: string
                 type: array
               lastAppliedGeneration:
-                description: 记录最后一次应用的配置版本
                 format: int64
                 type: integer
               lastUpdateTime:
-                description: 记录修改时间
                 format: date-time
                 type: string
             type: object

@@ -1,0 +1,60 @@
+---
+apiVersion: rbac.kubeants.io/v1beta1
+kind: RoleTemplate
+metadata:
+  name: admin
+spec:
+  autoApply: true  # 是否自动应用到新建的 namespace
+  namespaces: ["*"]  # 适用于所有 namespace
+  # namespaceSelector:
+  # matchLabels:
+  #   kubeants.io/workspace: ws1
+  # excludedNamespaces: ["kube-system"]  # 但不会应用到这些 namespace
+  rules:
+    - apiGroups: ["*"]  
+      resources: ["*"]
+      verbs: ["*"]
+---
+apiVersion: rbac.kubeants.io/v1beta1
+kind: RoleTemplate
+metadata:
+  name: edit
+spec:
+  autoApply: true  
+  namespaces: ["*"]  
+  excludedNamespaces: ["kube-system"]  
+  rules:
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.kubeants.io/v1beta1
+kind: RoleTemplate
+metadata:
+  name: view
+spec:
+  autoApply: true 
+  namespaces: ["*"]  
+  # excludedNamespaces: ["kube-system"]  
+  rules:
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.kubeants.io/v1beta1
+kind: RoleTemplate
+metadata:
+  name: test
+spec:
+  autoApply: true 
+  # namespaces: ["*"]  
+  namespaceSelector:
+    matchLabels:
+      kubeants.io/workspace: ws1
+  # excludedNamespaces: ["kube-system"]  
+  rules:
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["get", "list", "watch"]
+
+

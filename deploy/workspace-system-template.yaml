@@ -1,6 +1,14 @@
+---
 apiVersion: workspace.kubeants.io/v1beta1
 kind: Workspace
 metadata:
   name: "system-workspace"
+spec:
+  clusters: ["k8s1"]
+---
+apiVersion: workspace.kubeants.io/v1beta1
+kind: Workspace
+metadata:
+  name: "ws1"
 spec:
   clusters: ["k8s1"]

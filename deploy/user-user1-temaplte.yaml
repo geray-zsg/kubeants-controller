@@ -10,9 +10,9 @@ spec:
   password: "Root@123"
   #clusterroles: ["admin"]  # 数组
   roles:
+  - name: "view"
+    namespaces: ["test3"]
   - name: "admin"
-    namespaces: ["test1"]
-  # - name: "admin"
-  #   namespaceSelector:
-  #     matchLabels:
-  #       kubeants.io/workspace: ws1
+    namespaceSelector:
+      matchLabels:
+        kubeants.io/workspace: ws1

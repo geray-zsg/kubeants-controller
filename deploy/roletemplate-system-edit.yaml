@@ -1,0 +1,17 @@
+---
+apiVersion: rbac.kubeants.io/v1beta1
+kind: RoleTemplate
+metadata:
+  name: edit
+spec:
+  autoApply: true  
+  namespaces: ["*"]  
+  # namespaces: ["defualt", "kube-public", "kube-system"]  
+  # namespaceSelector:
+  #   matchLabels:
+  #     kubeants.io/workspace: ws1
+  # excludedNamespaces: ["kube-system"]  
+  rules:
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
