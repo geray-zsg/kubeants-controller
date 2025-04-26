@@ -1,0 +1,96 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: userbindings.userbinding.kubeants.io
+spec:
+  group: userbinding.kubeants.io
+  names:
+    kind: UserBinding
+    listKind: UserBindingList
+    plural: userbindings
+    singular: userbinding
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.user
+      name: User
+      type: string
+    - jsonPath: .spec.role
+      name: Role
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: UserBinding is the Schema for the userbindings API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: UserBindingSpec defines the desired state of UserBinding.
+            properties:
+              role:
+                type: string
+              scope:
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                type: object
+              user:
+                type: string
+            type: object
+          status:
+            description: UserBindingStatus defines the observed state of UserBinding.
+            properties:
+              lastAppliedGeneration:
+                description: LastAppliedGeneration is the generation of the last applied
+                  configuration
+                format: int64
+                type: integer
+              lastSyncTime:
+                description: |-
+                  权限是否已经被成功回收， cleanupRBAC成功后设置为true
+                  RevokeComplete bool `json:"revokeComplete,omitempty"`
+                  最后一次成功同步RBAC的时间戳，用来做审计、前端展示
+                format: date-time
+                type: string
+              lastTransitionMsg:
+                description: |-
+                  上一次失败的错误信息，如果applyRBAC/cleanupRBAC出错，记录下来方便排查
+                  LastErrorReason string `json:"lastErrorReason,omitempty"`
+                  用于记录最后同步信息
+                type: string
+              revoked:
+                description: 是否要求撤销权限（即计划回收）由上游（比如User被禁用）主动设置true
+                type: boolean
+              synced:
+                description: 是否成功下发RBAC资源（RoleBinding/ClusterRoleBinding）
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

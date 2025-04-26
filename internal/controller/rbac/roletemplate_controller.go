@@ -87,11 +87,11 @@ func (r *RoleTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// // ✅ 判断是否需要下发（只在 Generation 变化时处理）
-	// if rt.Status.LastAppliedGeneration == rt.Generation {
-	// 	logger.Info("🚫RoleTemplate未修改，且没有新的Namespace，跳过处理", "RoleTemplate", rt.Name)
-	// 	return ctrl.Result{}, nil
-	// }
+	// ✅ 判断是否需要下发（只在 Generation 变化时处理）
+	if rt.Status.LastAppliedGeneration == rt.Generation {
+		logger.Info("🚫RoleTemplate未修改，跳过处理", "RoleTemplate", rt.Name)
+		return ctrl.Result{}, nil
+	}
 
 	// ✅ 获取当前应下发的命名空间列表
 	namespaces, err := r.getApplicableNamespaces(ctx, rt)

@@ -18,17 +18,14 @@ package user
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"regexp"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -44,6 +41,13 @@ type UserReconciler struct {
 	Scheme *runtime.Scheme
 }
 
+// 定义标签
+const (
+	ManagedByLabel = "kubeants.io/managed-by"
+	ManagedByValue = "user"
+	UserLable      = "kubeants.io/user"
+)
+
 // +kubebuilder:rbac:groups=user.kubeants.io,resources=users,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=user.kubeants.io,resources=users/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=user.kubeants.io,resources=users/finalizers,verbs=update
@@ -58,80 +62,33 @@ type UserReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-	// logger.Info("Reconciling User[调和]")
+	logger := log.FromContext(ctx).WithValues("user", req.NamespacedName.Name)
+	start := time.Now()
+
+	logger.Info("🔄 Starting reconciliation")
 
 	user := userv1beta1.User{}
 	if err := r.Get(ctx, req.NamespacedName, &user); err != nil {
 		if errors.IsNotFound(err) {
-			logger.Info("User not found. Ignoring since it must have been deleted.")
+			logger.Info("✅ User deleted, nothing to do")
 			return ctrl.Result{}, nil
 		}
-		logger.Error(err, "Failed to get User[获取用户失败]")
+		logger.Error(err, "❌ Failed to fetch User")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// 定义资源关联的label
-	labels := map[string]string{"user.kubeants.io/user": user.Name}
-
-	// 检查是否有变化，如果没有变化则不下发
+	// // 检查是否有变化，如果没有变化则不下发
 	needsReapply := user.Status.LastAppliedGeneration != user.Generation
 	if !needsReapply {
-		logger.Info("No changes detected. Skipping reconciliation.", "user", user.Name)
+		logger.Info("🚫User未修改，跳过处理", "User", user.Name)
 		return ctrl.Result{}, nil
 	}
 
-	// ✅ 处理 Finalizer 逻辑，确保删除前回收权限
-	if user.ObjectMeta.DeletionTimestamp.IsZero() {
-		// 如果 User 没有Finalizer，则添加他
-		if !containsString(user.Finalizers, "user.kubeants.io/finalizer") {
-			user.Finalizers = append(user.Finalizers, "user.kubeants.io/finalizer")
-			if err := r.Update(ctx, &user); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-	} else {
-		// User 即将被删除，清理资源
-		logger.Info("User is being deleted. Cleaning up resources.")
-		_, err := r.cleanupResources(ctx, &user, labels)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// 移除finalizer
-		user.Finalizers = removeString(user.Finalizers, "user.kubeants.io/finalizer")
-		if err := r.Update(ctx, &user); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// 1.2.用户被禁用，回收权限
-	if user.Spec.State != "active" {
-		logger.Info("User is being  disabled. Cleaning up resources[回收权限]")
-		return r.cleanupResources(ctx, &user, labels)
-	}
-
-	// 2.1.处理 ServiceAccount
-	sa, err := r.reconcileServiceAccount(ctx, &user, labels)
+	// 🚀 下发ServiceAccount
+	sa, err := r.reconcileServiceAccount(ctx, &user)
 	if err != nil {
-		logger.Error(err, "Failed to reconcile ServiceAccount[处理ServiceAccount失败]")
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile ServiceAccount: %w", err)
-	}
-
-	// 2.2.处理clusterroles
-	if user.Spec.ClusterRoles != nil {
-		if _, err := r.reconcileClusterRoles(ctx, &user, sa, labels); err != nil {
-			logger.Error(err, "Failed to reconcile ClusterRoles[处理ClusterRoles失败]")
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile ClusterRoles: %w", err)
-		}
-	}
-	// 2.3.处理roles
-	if user.Spec.Roles != nil {
-		if _, err := r.reconcileRoles(ctx, &user, sa, labels); err != nil {
-			logger.Error(err, "Failed to reconcile Roles[处理Roles失败]")
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile Roles: %w", err)
-		}
+		logger.Error(err, "❌ Failed to apply serviceaccount", "user", user.Name)
+		return ctrl.Result{}, err
 	}
 
 	// 密码加密
@@ -145,9 +102,12 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// 5.更新 User 状态
-	r.updateStatus(ctx, &user, sa.Name)
-	// ✅ 增加 `RequeueAfter` 避免死循环
-	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	if _, err := r.updateStatus(ctx, &user, sa.Name); err != nil {
+		logger.Error(err, "❌ Failed to update user status", "user", user.Name)
+		return ctrl.Result{}, err
+	}
+	logger.Info("✅ Reconciliation complete", "duration", time.Since(start))
+	return ctrl.Result{}, nil
 
 }
 
@@ -182,18 +142,26 @@ func (r *UserReconciler) updateStatus(ctx context.Context, user *userv1beta1.Use
 }
 
 // 动态生成与User关联的serviceaccount，并注入OwnerReference实现级联删除
-func (r *UserReconciler) reconcileServiceAccount(ctx context.Context, user *userv1beta1.User, labels map[string]string) (*corev1.ServiceAccount, error) {
+func (r *UserReconciler) reconcileServiceAccount(ctx context.Context, user *userv1beta1.User) (*corev1.ServiceAccount, error) {
 	logger := log.FromContext(ctx)
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "user-" + user.Name, // 唯一名称，如 user-admin
-			Namespace: "default",           // 指定 SA 的命名空间
-			Labels:    labels,
+			Namespace: "kubeants-system",   // 指定 SA 的命名空间
+			Labels: map[string]string{
+				ManagedByLabel: ManagedByValue,
+				UserLable:      user.Name,
+			},
 		},
 	}
 
 	// 创建或更新 SA
 	op, err := ctrl.CreateOrUpdate(ctx, r.Client, sa, func() error {
+		// 强制把Label、OwnerReference重新设置一次，保证一致性，防止人为手动修改
+		sa.Labels = map[string]string{
+			ManagedByLabel: ManagedByValue,
+			UserLable:      user.Name,
+		}
 		// 设置 OwnerReference 确保 User 删除时 SA 被清理
 		if err := ctrl.SetControllerReference(user, sa, r.Scheme); err != nil {
 			return err
@@ -205,270 +173,6 @@ func (r *UserReconciler) reconcileServiceAccount(ctx context.Context, user *user
 	return sa, err
 }
 
-// reconcileClusterRoles 处理 ClusterRoles 生成对应的clusterrolebinding
-func (r *UserReconciler) reconcileClusterRoles(ctx context.Context, user *userv1beta1.User, sa *corev1.ServiceAccount, labels map[string]string) (crbs []*rbacv1.ClusterRoleBinding, err error) {
-	logger := log.FromContext(ctx)
-	// crbList := make([]*rbacv1.ClusterRoleBinding, 0)
-
-	for _, clusterRole := range user.Spec.ClusterRoles {
-		// 构建 ClusterRoleBinding 名称
-		crbName := fmt.Sprintf("user-%s-%s", clusterRole, user.Name)
-
-		// 构建 ClusterRoleBinding 对象
-		crbObj := &rbacv1.ClusterRoleBinding{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:   crbName,
-				Labels: labels,
-			},
-			Subjects: []rbacv1.Subject{
-				{
-					Kind:      "ServiceAccount",
-					Name:      sa.Name,
-					Namespace: sa.Namespace,
-				},
-			},
-			RoleRef: rbacv1.RoleRef{
-				APIGroup: "rbac.authorization.k8s.io",
-				Kind:     "ClusterRole",
-				Name:     clusterRole,
-			},
-		}
-		// 创建或更新 clusterrolebinding
-		opResult, err := ctrl.CreateOrUpdate(ctx, r.Client, crbObj, func() error {
-			// 设置OwnerReference 确保删除User 是能级联删除ClusterRoleBinding
-			if err := ctrl.SetControllerReference(user, crbObj, r.Scheme); err != nil {
-				logger.Error(err, "Failed to set controller reference[设置OwnerReference失败]")
-				return err
-			}
-			return nil
-		})
-
-		if err != nil {
-			logger.Error(err, "Failed to create or update ClusterRoleBinding", "name", crbName)
-			return nil, err // 返回错误，终止处理
-		}
-
-		// 记录操作结果
-		logger.Info("✅ ClusterRoleBinding reconciled", "name", crbName, "operation", opResult)
-
-		// 将创建的 ClusterRoleBinding 添加到结果列表
-		crbs = append(crbs, crbObj)
-
-	}
-
-	return crbs, nil
-}
-
-// reconcileRoles 处理 Roles ,支持标签
-func (r *UserReconciler) reconcileRoles(ctx context.Context, user *userv1beta1.User, sa *corev1.ServiceAccount, labels map[string]string) (rbs []*rbacv1.RoleBinding, err error) {
-	logger := log.FromContext(ctx)
-
-	for _, role := range user.Spec.Roles {
-		// 1.处理 namespaceSelector 逻辑，获取匹配的 Namespace 列表
-		var namespaceList []string
-
-		// 2.处理namespaceList 数组
-		if role.Namespaces != nil {
-			namespaceList = append(namespaceList, role.Namespaces...)
-		}
-
-		// 3.处理 namespaceSelector
-		if role.NamespaceSelector != nil && role.NamespaceSelector.MatchLabels != nil {
-			matchedNamespaces, err := r.getNamespacesBySelector(ctx, role.NamespaceSelector.MatchLabels) // 获取匹配的Namespace
-			if err != nil {
-				logger.Error(err, "Failed to get namespaces by selector[根据Selector获取Namespace失败]", "selector", role.NamespaceSelector.MatchLabels)
-				return nil, err
-			}
-			namespaceList = append(namespaceList, matchedNamespaces...)
-		}
-
-		// 2.遍历 namespaceList，为每个 Namespace 创建 RoleBinding
-		for _, ns := range namespaceList {
-			// 构建 RoleBinding 名称
-			rbName := fmt.Sprintf("user-%s-%s", role.Name, user.Name)
-
-			// 构建rolebinding 对象
-			rbObj := &rbacv1.RoleBinding{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      rbName,
-					Namespace: ns,
-					Labels:    labels,
-				},
-				Subjects: []rbacv1.Subject{
-					{
-						Kind:      "ServiceAccount",
-						Name:      sa.Name,
-						Namespace: sa.Namespace,
-					},
-				},
-				RoleRef: rbacv1.RoleRef{
-					APIGroup: "rbac.authorization.k8s.io",
-					Kind:     "ClusterRole",
-					Name:     role.Name,
-				},
-			}
-
-			// 创建或更新 rolebinding
-			opResult, err := ctrl.CreateOrUpdate(ctx, r.Client, rbObj, func() error {
-				// 设置OwnerReference 确保删除User 是能级联删除RoleBinding
-				if err := ctrl.SetControllerReference(user, rbObj, r.Scheme); err != nil {
-					logger.Error(err, "Failed to set controller reference[设置OwnerReference失败]")
-					return err
-				}
-				return nil
-			})
-
-			if err != err {
-				logger.Error(err, "Failed to create or update RoleBinding", "name", rbName)
-				return nil, err // 返回错误，终止处理
-			}
-
-			// 记录操作结果
-			logger.Info("✅ RoleBinding reconciled", "name", rbName, "namespace", ns, "operation", opResult)
-			// 将创建的 rolebinding 添加到返回结果列表
-			rbs = append(rbs, rbObj)
-		}
-
-	}
-	return rbs, nil
-}
-
-// 获取符合 selector 规则的 namespaces
-func (r *UserReconciler) getNamespacesBySelector(ctx context.Context, selector map[string]string) ([]string, error) {
-	var namespaceList corev1.NamespaceList
-	err := r.List(ctx, &namespaceList, client.MatchingLabels(selector))
-	if err != nil {
-		return nil, err
-	}
-
-	var namespaces []string
-	for _, ns := range namespaceList.Items {
-		namespaces = append(namespaces, ns.Name)
-	}
-
-	return namespaces, nil
-}
-
-func (r *UserReconciler) cleanupResources(ctx context.Context, user *userv1beta1.User, labelMap map[string]string) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-	selector := labels.SelectorFromSet(labels.Set(labelMap))
-	var errs []error // 收集所有错误，最后一起返回
-
-	// ✅ 1. 删除匹配标签的 ServiceAccount（所有 Namespace）
-	saList := &corev1.ServiceAccountList{}
-	if err := r.List(ctx, saList, &client.ListOptions{
-		LabelSelector: selector,
-		Namespace:     "", // 所有命名空间
-	}); err != nil {
-		logger.Error(err, "Failed to list ServiceAccount")
-		errs = append(errs, err)
-	} else {
-		for _, sa := range saList.Items {
-			if err := r.Delete(ctx, &sa); client.IgnoreNotFound(err) != nil {
-				logger.Error(err, "Failed to delete ServiceAccount", "name", sa.Name, "namespace", sa.Namespace)
-				errs = append(errs, err)
-			} else {
-				logger.Info("Deleted ServiceAccount", "name", sa.Name, "namespace", sa.Namespace)
-			}
-		}
-	}
-
-	// ✅ 2. 删除匹配标签的 ClusterRoleBinding
-	crbList := &rbacv1.ClusterRoleBindingList{}
-	if err := r.List(ctx, crbList, client.MatchingLabels(labelMap)); err != nil {
-		logger.Error(err, "Failed to list ClusterRoleBinding")
-		errs = append(errs, err)
-	} else {
-		for _, crb := range crbList.Items {
-			if err := r.Delete(ctx, &crb); client.IgnoreNotFound(err) != nil {
-				logger.Error(err, "Failed to delete ClusterRoleBinding", "name", crb.Name)
-				errs = append(errs, err)
-			} else {
-				logger.Info("Deleted ClusterRoleBinding", "name", crb.Name)
-			}
-		}
-	}
-
-	// ✅ 3. 删除匹配标签的 RoleBinding（所有涉及到的 Namespace）
-	seenNamespaces := map[string]bool{} // 防止重复处理
-
-	for _, role := range user.Spec.Roles {
-		var namespaceList []string
-
-		// 指定的 namespaces
-		if role.Namespaces != nil {
-			namespaceList = append(namespaceList, role.Namespaces...)
-		}
-
-		// 匹配 label 的 namespace
-		if role.NamespaceSelector != nil && role.NamespaceSelector.MatchLabels != nil {
-			matchedNamespaces, err := r.getNamespacesBySelector(ctx, role.NamespaceSelector.MatchLabels)
-			if err != nil {
-				logger.Error(err, "Failed to get namespaces by selector")
-				errs = append(errs, err)
-				continue
-			}
-			namespaceList = append(namespaceList, matchedNamespaces...)
-		}
-
-		// 删除每个命名空间中的 RoleBinding
-		for _, ns := range namespaceList {
-			if seenNamespaces[ns] {
-				continue // 已处理
-			}
-			seenNamespaces[ns] = true
-
-			rbList := &rbacv1.RoleBindingList{}
-			if err := r.List(ctx, rbList, &client.ListOptions{
-				LabelSelector: selector,
-				Namespace:     ns,
-			}); err != nil {
-				logger.Error(err, "Failed to list RoleBinding", "namespace", ns)
-				errs = append(errs, err)
-				continue
-			}
-
-			for _, rb := range rbList.Items {
-				if err := r.Delete(ctx, &rb); client.IgnoreNotFound(err) != nil {
-					logger.Error(err, "Failed to delete RoleBinding", "name", rb.Name, "namespace", ns)
-					errs = append(errs, err)
-				} else {
-					logger.Info("Deleted RoleBinding", "name", rb.Name, "namespace", ns)
-				}
-			}
-		}
-	}
-
-	// 🔚 总结处理
-	if len(errs) > 0 {
-		return ctrl.Result{}, fmt.Errorf("failed to cleanup some resources: %v", errs)
-	}
-
-	logger.Info("✅ Successfully cleaned up all RBAC resources for User", "user", user.Name)
-	return ctrl.Result{}, nil
-}
-
-// 检查字符串切片是否包含指定字符串
-func containsString(slice []string, target string) bool {
-	for _, item := range slice {
-		if item == target {
-			return true
-		}
-	}
-	return false
-}
-
-// 移除字符串切片中的目标字符串（代码中使用的 removeString 实现参考）
-func removeString(slice []string, target string) []string {
-	newSlice := []string{}
-	for _, s := range slice {
-		if s != target {
-			newSlice = append(newSlice, s)
-		}
-	}
-	return newSlice
-}
-
 // isHashedPassword 检查密码是否已经是 bcrypt 格式
 func isHashedPassword(password string) bool {
 	bcryptPattern := `^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$`
@@ -478,17 +182,14 @@ func isHashedPassword(password string) bool {
 
 // ensurePasswordHashed 确保用户密码已经加密
 func (r *UserReconciler) ensurePasswordHashed(ctx context.Context, user *userv1beta1.User) (bool, error) {
-	logger := log.FromContext(ctx)
 	// 如果已经被加密则不处理
 	if isHashedPassword(user.Spec.Password) {
-		logger.Info("User password is already hashed")
 		return false, nil
 	}
 	// 进行加密
 	bcryptPassword, err := bcrypt.GenerateFromPassword([]byte(user.Spec.Password), bcrypt.DefaultCost)
 	if err != nil {
-		logger.Error(err, "用户密码加密失败", "user", user.Name)
-		return false, fmt.Errorf("failed to hash password[bcrypt加密失败]: %w", err)
+		return false, err
 	}
 
 	// 更新密码字段
@@ -496,9 +197,7 @@ func (r *UserReconciler) ensurePasswordHashed(ctx context.Context, user *userv1b
 	user.Spec.Password = string(bcryptPassword)
 
 	if err := r.Patch(ctx, user, patch); err != nil {
-		logger.Error(err, "Failed to patch User[bcrypt加密后更新用户数据失败]", "user", user.Name)
-		return false, fmt.Errorf("failed to patch user[bcrypt加密后更新用户数据失败]: %w", err)
+		return false, err
 	}
 	return true, nil
-
 }

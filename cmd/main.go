@@ -41,10 +41,12 @@ import (
 	clusterv1beta1 "github.com/kubeants/kubeants-controller/api/cluster/v1beta1"
 	rbacv1beta1 "github.com/kubeants/kubeants-controller/api/rbac/v1beta1"
 	userv1beta1 "github.com/kubeants/kubeants-controller/api/user/v1beta1"
+	userbindingv1beta1 "github.com/kubeants/kubeants-controller/api/userbinding/v1beta1"
 	workspacev1beta1 "github.com/kubeants/kubeants-controller/api/workspace/v1beta1"
 	clustercontroller "github.com/kubeants/kubeants-controller/internal/controller/cluster"
 	rbaccontroller "github.com/kubeants/kubeants-controller/internal/controller/rbac"
 	usercontroller "github.com/kubeants/kubeants-controller/internal/controller/user"
+	userbindingcontroller "github.com/kubeants/kubeants-controller/internal/controller/userbinding"
 	workspacecontroller "github.com/kubeants/kubeants-controller/internal/controller/workspace"
 	"github.com/kubeants/kubeants-controller/util"
 	// +kubebuilder:scaffold:imports
@@ -62,6 +64,7 @@ func init() {
 	utilruntime.Must(workspacev1beta1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1beta1.AddToScheme(scheme))
 	utilruntime.Must(userv1beta1.AddToScheme(scheme))
+	utilruntime.Must(userbindingv1beta1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -262,6 +265,13 @@ func main() {
 		}
 	}
 
+	if err = (&userbindingcontroller.UserBindingReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "UserBinding")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

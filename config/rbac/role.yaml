@@ -83,6 +83,32 @@ rules:
   - patch
   - update
 - apiGroups:
+  - userbinding.kubeants.io
+  resources:
+  - userbindings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - userbinding.kubeants.io
+  resources:
+  - userbindings/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - userbinding.kubeants.io
+  resources:
+  - userbindings/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - workspace.kubeants.io
   resources:
   - workspaces

@@ -1,0 +1,83 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+  name: users.userbinding.kubeants.io
+spec:
+  group: userbinding.kubeants.io
+  names:
+    kind: UserBinding
+    listKind: UserBindingList
+    plural: users
+    singular: userbinding
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.user
+      name: User
+      type: string
+    - jsonPath: .spec.role
+      name: Role
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: UserBinding is the Schema for the userbindings API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: UserBindingSpec defines the desired state of UserBinding.
+            properties:
+              role:
+                type: string
+              scope:
+                properties:
+                  kind:
+                    type: string
+                  name:
+                    type: string
+                type: object
+              user:
+                type: string
+            type: object
+          status:
+            description: UserBindingStatus defines the observed state of UserBinding.
+            properties:
+              lastErrorReason:
+                type: string
+              lastSyncTime:
+                format: date-time
+                type: string
+              revokeComplete:
+                type: boolean
+              revoked:
+                type: boolean
+              synced:
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,10 @@
+apiVersion: userbinding.kubeants.io/v1beta1
+kind: UserBinding
+metadata:
+  name: "user1-ws1"
+spec:
+  user: "user1"
+  scope:
+    kind: "Namespace"
+    name: "test5"
+  role: "edit"

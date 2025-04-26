@@ -1,19 +1,13 @@
 apiVersion: user.kubeants.io/v1beta1
 kind: User
 metadata:
-  name: "admin"
+  name: user1
 spec:
-  state: "active"
-  name: "平台管理员"
-  email: "admin@ka.io"
-  platformRoles: "plat-admin"
-  phone: ""
-  password: "Root@123"
-  clusterroles: ["admin"]  # 数组
-  # roles:
-  # - name: "admin"
-  #   namespaces: ["test1","test2"]
-  # - name: "admin"
-  #   namespaceSelector:
-  #     matchLabels:
-  #       kubeants.io/workspace: ws1
+  name: "张三"
+  email: "user1@ka.io"
+  phone: "138xxxxxx"
+  password: "$bcrypt$xxxxxxx"
+  state: "disabled" # active / disabled
+# status:
+#   serviceAccount: "user-user1"
+#   lastLoginTime: "2025-04-26T12:00:00Z"

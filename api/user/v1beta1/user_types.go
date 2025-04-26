@@ -20,48 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// RoleBinding defines a role binding for a user in a namespace or set of namespaces
-type RoleBinding struct {
-	// Name of the role binding
-	Name string `json:"name,omitempty"`
-	// Namespaces specifies the namespaces for the role binding
-	Namespaces []string `json:"namespaces,omitempty"`
-	// NamespaceSelector selects namespaces based on labels
-	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
-}
-
-// RoleBinding defines a role binding for a user in a namespace or set of namespaces
-type Roles struct {
-	// Name of the role binding
-	Name string `json:"name,omitempty"`
-	// Namespaces specifies the namespaces for the role binding
-	Namespaces []string `json:"namespaces,omitempty"`
-	// NamespaceSelector selects namespaces based on labels
-	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector,omitempty"`
-}
-
 // UserSpec defines the desired state of User.
 type UserSpec struct {
-	// State indicates the status of the user (e.g., Active, Inactive)
-	State string `json:"state,omitempty"`
-	// Name is the display name of the user
-	Name string `json:"name,omitempty"`
-	// 绑定的平台角色
-	PlatformRoles string `json:"platformRoles,omitempty"`
-	// Email is the email address of the user
-	Email string `json:"email,omitempty"`
-	// Phone is the phone number of the user
-	Phone string `json:"phone,omitempty"`
-	// Password is the hashed password of the user (not typically stored in a CRD, for security reasons)
+	Name     string `json:"name,omitempty"`
+	Email    string `json:"email,omitempty"`
+	Phone    string `json:"phone,omitempty"`
 	Password string `json:"password,omitempty"`
-	// ClusterRoles specifies the cluster-wide role binding for the user
-	ClusterRoles []string `json:"clusterroles,omitempty"`
-	// Roles specifies the cluster-wide role binding for the user
-	Roles []Roles `json:"roles,omitempty"`
-	// ClusterRoleBinding specifies the cluster-wide role binding for the user
-	ClusterRoleBinding string `json:"clusterrolebinding,omitempty"`
-	// RoleBindings specifies the role bindings for the user in specific namespaces
-	RoleBindings []RoleBinding `json:"rolebindings,omitempty"`
+	State    string `json:"state,omitempty"` // active / disabled
 }
 
 // UserStatus defines the observed state of User.
@@ -81,7 +46,6 @@ type UserStatus struct {
 // +kubebuilder:resource:path=users,scope=Cluster
 // +kubebuilder:printcolumn:name="Phone",type="string",JSONPath=".spec.phone"
 // +kubebuilder:printcolumn:name="Email",type="string",JSONPath=".spec.email"
-// +kubebuilder:printcolumn:name="PlatformRoles",type="string",JSONPath=".spec.platformRoles"
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.spec.state`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // User is the Schema for the users API.

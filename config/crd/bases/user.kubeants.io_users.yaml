@@ -21,9 +21,6 @@ spec:
     - jsonPath: .spec.email
       name: Email
       type: string
-    - jsonPath: .spec.platformRoles
-      name: PlatformRoles
-      type: string
     - jsonPath: .spec.state
       name: State
       type: string
@@ -55,163 +52,15 @@ spec:
           spec:
             description: UserSpec defines the desired state of User.
             properties:
-              clusterrolebinding:
-                description: ClusterRoleBinding specifies the cluster-wide role binding
-                  for the user
-                type: string
-              clusterroles:
-                description: ClusterRoles specifies the cluster-wide role binding
-                  for the user
-                items:
-                  type: string
-                type: array
               email:
-                description: Email is the email address of the user
                 type: string
               name:
-                description: Name is the display name of the user
                 type: string
               password:
-                description: Password is the hashed password of the user (not typically
-                  stored in a CRD, for security reasons)
                 type: string
               phone:
-                description: Phone is the phone number of the user
                 type: string
-              platformRoles:
-                description: 绑定的平台角色
-                type: string
-              rolebindings:
-                description: RoleBindings specifies the role bindings for the user
-                  in specific namespaces
-                items:
-                  description: RoleBinding defines a role binding for a user in a
-                    namespace or set of namespaces
-                  properties:
-                    name:
-                      description: Name of the role binding
-                      type: string
-                    namespaceSelector:
-                      description: NamespaceSelector selects namespaces based on labels
-                      properties:
-                        matchExpressions:
-                          description: matchExpressions is a list of label selector
-                            requirements. The requirements are ANDed.
-                          items:
-                            description: |-
-                              A label selector requirement is a selector that contains values, a key, and an operator that
-                              relates the key and values.
-                            properties:
-                              key:
-                                description: key is the label key that the selector
-                                  applies to.
-                                type: string
-                              operator:
-                                description: |-
-                                  operator represents a key's relationship to a set of values.
-                                  Valid operators are In, NotIn, Exists and DoesNotExist.
-                                type: string
-                              values:
-                                description: |-
-                                  values is an array of string values. If the operator is In or NotIn,
-                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                  the values array must be empty. This array is replaced during a strategic
-                                  merge patch.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            required:
-                            - key
-                            - operator
-                            type: object
-                          type: array
-                          x-kubernetes-list-type: atomic
-                        matchLabels:
-                          additionalProperties:
-                            type: string
-                          description: |-
-                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                            map is equivalent to an element of matchExpressions, whose key field is "key", the
-                            operator is "In", and the values array contains only "value". The requirements are ANDed.
-                          type: object
-                      type: object
-                      x-kubernetes-map-type: atomic
-                    namespaces:
-                      description: Namespaces specifies the namespaces for the role
-                        binding
-                      items:
-                        type: string
-                      type: array
-                  type: object
-                type: array
-              roles:
-                description: Roles specifies the cluster-wide role binding for the
-                  user
-                items:
-                  description: RoleBinding defines a role binding for a user in a
-                    namespace or set of namespaces
-                  properties:
-                    name:
-                      description: Name of the role binding
-                      type: string
-                    namespaceSelector:
-                      description: NamespaceSelector selects namespaces based on labels
-                      properties:
-                        matchExpressions:
-                          description: matchExpressions is a list of label selector
-                            requirements. The requirements are ANDed.
-                          items:
-                            description: |-
-                              A label selector requirement is a selector that contains values, a key, and an operator that
-                              relates the key and values.
-                            properties:
-                              key:
-                                description: key is the label key that the selector
-                                  applies to.
-                                type: string
-                              operator:
-                                description: |-
-                                  operator represents a key's relationship to a set of values.
-                                  Valid operators are In, NotIn, Exists and DoesNotExist.
-                                type: string
-                              values:
-                                description: |-
-                                  values is an array of string values. If the operator is In or NotIn,
-                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                  the values array must be empty. This array is replaced during a strategic
-                                  merge patch.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            required:
-                            - key
-                            - operator
-                            type: object
-                          type: array
-                          x-kubernetes-list-type: atomic
-                        matchLabels:
-                          additionalProperties:
-                            type: string
-                          description: |-
-                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                            map is equivalent to an element of matchExpressions, whose key field is "key", the
-                            operator is "In", and the values array contains only "value". The requirements are ANDed.
-                          type: object
-                      type: object
-                      x-kubernetes-map-type: atomic
-                    namespaces:
-                      description: Namespaces specifies the namespaces for the role
-                        binding
-                      items:
-                        type: string
-                      type: array
-                  type: object
-                type: array
               state:
-                description: State indicates the status of the user (e.g., Active,
-                  Inactive)
                 type: string
             type: object
           status:
