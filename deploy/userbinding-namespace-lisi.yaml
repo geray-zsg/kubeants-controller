@@ -1,7 +1,7 @@
 apiVersion: userbinding.kubeants.io/v1beta1
 kind: UserBinding
 metadata:
-  name: "user1-ws1"
+  name: "namespace-test5-lisi"
 spec:
   user: "user1"
   scope:

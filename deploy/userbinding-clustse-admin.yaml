@@ -1,13 +1,10 @@
 apiVersion: userbinding.kubeants.io/v1beta1
 kind: UserBinding
 metadata:
-  name: "user1-cluster-admin"
+  name: "cluster-admin-admin"
 spec:
-  user: "user1"
+  user: "admin"
   scope:
     kind: "Cluster"
     name: "admin"   # 这里name字段可以随便填，比如"default"、"system"都行，只要不是空就行，表示集群作用域
   role: "admin"        # 指定ClusterRole的名字，比如集群的admin/view/edit等
-# status:
-#   synced: true
-#   lastSyncTime: "2025-04-26T12:00:00Z"

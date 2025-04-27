@@ -19,7 +19,6 @@ package userbinding
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,6 +47,7 @@ const (
 	ManagedByLabel   = "kubeants.io/managed-by"
 	ManagedByValue   = "userbinding"
 	UserBindingLable = "kubeants.io/userbinding"
+	UserLabel        = "kubeants.io/user"
 )
 
 // +kubebuilder:rbac:groups=userbinding.kubeants.io,resources=userbindings,verbs=get;list;watch;create;update;patch;delete
@@ -64,13 +64,12 @@ const (
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *UserBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues("userbinding", req.NamespacedName.Name)
+	logger := log.FromContext(ctx).WithValues("userbinding", req.Name)
 	start := time.Now()
+	logger.Info("✨ Reconciling UserBinding")
 
-	logger.Info("🔄 Starting reconciliation")
-
-	userbinding := userbindingv1beta1.UserBinding{}
-	if err := r.Get(ctx, req.NamespacedName, &userbinding); err != nil {
+	userbinding := &userbindingv1beta1.UserBinding{}
+	if err := r.Get(ctx, req.NamespacedName, userbinding); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("✅ UserBinding deleted, nothing to do")
 			return ctrl.Result{}, nil
@@ -79,116 +78,85 @@ func (r *UserBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// 给自己打标签
+	// 检查kubeants.io/managed-by标签
+	if err := r.ensureUserBindingLabels(ctx, userbinding); err != nil {
+		logger.Error(err, "❌ Failed to patch labels")
+		return ctrl.Result{}, err
+	}
+
 	// --- 同步User状态 ---
 	user := &userv1beta1.User{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Name: userbinding.Spec.User}, user); err != nil {
 		if errors.IsNotFound(err) {
-			logger.Info("⚡ Related User not found, marking revoke", "user", userbinding.Spec.User)
+			logger.Info("⚠️ Related User not found, marking revoke", "user", userbinding.Spec.User)
+			// 关联User不存在了，标记回收
 			userbinding.Status.Revoked = true
-			if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-				logger.Error(err, "❌ Failed to update revoke status")
-				return ctrl.Result{}, err
-			}
-			// 不return，继续执行回收逻辑
+			_ = r.Status().Update(ctx, userbinding)
 		} else {
 			logger.Error(err, "❌ Failed to fetch related User")
 			return ctrl.Result{}, err
 		}
 	} else {
 		// User存在，检查状态
-		if user.Spec.State == "active" {
-			if userbinding.Status.Revoked {
-				logger.Info("✅ User is active again, clearing revoked flag")
-				userbinding.Status.Revoked = false
-				userbinding.Status.LastTransitionMsg = fmt.Sprintf("✅ User %s active, binding re-activated", userbinding.Spec.User)
-				// if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-				// 	logger.Error(err, "❌ Failed to update active status")
-				// 	return ctrl.Result{}, err
-				// }
-				if err := r.Status().Update(ctx, &userbinding); err != nil {
-					logger.Error(err, "❌ Failed to update status")
-					return ctrl.Result{}, err
-				}
-			}
-		} else {
-			if !userbinding.Status.Revoked {
-				logger.Info("⚡ User is disabled/deleted, marking revoke", "user", userbinding.Spec.User)
-				userbinding.Status.Revoked = true
-				// if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-				// 	logger.Error(err, "❌ Failed to update revoke status")
-				// 	return ctrl.Result{}, err
-				// }
-				if err := r.Status().Update(ctx, &userbinding); err != nil {
-					logger.Error(err, "❌ Failed to update revoke status")
-					return ctrl.Result{}, err
-				}
-			}
+		if user.Spec.State == "active" && userbinding.Status.Revoked {
+			logger.Info("✅ User is active again, clearing revoked flag")
+			userbinding.Status.Revoked = false
+			userbinding.Status.LastTransitionMsg = fmt.Sprintf("✅ User %s active, binding re-activated", userbinding.Spec.User)
+			_ = r.Status().Update(ctx, userbinding)
+		} else if user.Spec.State != "active" && !userbinding.Status.Revoked {
+			userbinding.Status.Revoked = true
+			userbinding.Status.LastTransitionMsg = fmt.Sprintf("⚠️ User %s is disabled/deleted", userbinding.Spec.User)
+			_ = r.Status().Update(ctx, userbinding)
 		}
 	}
 
 	// --- 处理权限回收 ---
 	if userbinding.Status.Revoked {
 		logger.Info("🧹 Starting to revoke RBAC", "userbinding", userbinding.Name)
-		if err := r.cleanupRBAC(ctx, &userbinding); err != nil {
+		if err := r.cleanupRBAC(ctx, userbinding); err != nil {
 			logger.Error(err, "❌ Failed to cleanup RBAC")
 			userbinding.Status.LastTransitionMsg = fmt.Sprintf("❌ Failed to revoke RBAC: %s", err.Error())
-			if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil // 回收失败可以下一次重试
+			_ = r.Status().Update(ctx, userbinding)
+			return ctrl.Result{}, nil
 		}
 
 		// 清理成功记录信息
 		userbinding.Status.Synced = false // 下次如果User又恢复，要重新下发
 		userbinding.Status.LastTransitionMsg = fmt.Sprintf("✅ Successfully revoked RBAC for userbinding %s", userbinding.Name)
-		// if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-		// 	logger.Error(err, "❌ Failed to update revoke complete")
-		// 	return ctrl.Result{}, err
-		// }
-		if err := r.Status().Update(ctx, &userbinding); err != nil {
+
+		if err := r.Status().Update(ctx, userbinding); err != nil {
 			logger.Error(err, "❌ Failed to update revoke complete")
 			return ctrl.Result{}, err
 		}
+		_ = r.Status().Update(ctx, userbinding)
 		logger.Info("✅ RBAC revoked successfully")
 		return ctrl.Result{}, nil
 	}
 
 	// ✅ 判断是否需要下发（只在 Generation 变化时处理）
-	if userbinding.Status.LastAppliedGeneration == userbinding.Generation {
+	if userbinding.Status.LastAppliedGeneration == userbinding.Generation && userbinding.Status.Synced {
 		logger.Info("🚫UserBinding未修改，跳过处理", "UserBinding", userbinding.Name)
 		return ctrl.Result{}, nil
 	}
 
 	// --- 处理RBAC下发 ---
-	if !userbinding.Status.Synced && !userbinding.Status.Revoked {
-		logger.Info("🚀 Applying RBAC for userbinding", "userbinding", userbinding.Name)
-		if err := r.applyRBAC(ctx, &userbinding); err != nil {
-			logger.Error(err, "❌ Failed to apply RBAC")
-			userbinding.Status.LastTransitionMsg = fmt.Sprintf("❌ Failed to apply RBAC: %s", err.Error())
-			// if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-			// 	return ctrl.Result{}, err
-			// }
-			if err := r.Status().Update(ctx, &userbinding); err != nil {
-				logger.Error(err, "❌ Failed to apply RBAC")
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil // 下次自动重试
-		}
 
-		userbinding.Status.Synced = true
-		userbinding.Status.LastSyncTime = metav1.Now()
-		userbinding.Status.LastAppliedGeneration = userbinding.Generation
-		userbinding.Status.LastTransitionMsg = fmt.Sprintf("✅ Successfully applied RBAC for userbinding %s", userbinding.Name)
-		// if _, err := r.updateStatus(ctx, &userbinding); err != nil {
-		// 	logger.Error(err, "❌ Failed to update after apply")
-		// 	return ctrl.Result{}, err
-		// }
-		if err := r.Status().Update(ctx, &userbinding); err != nil {
-			logger.Error(err, "❌ Failed to update after apply")
-			return ctrl.Result{}, err
-		}
-		logger.Info("✅ RBAC applied successfully")
+	logger.Info("🚀 Applying RBAC for userbinding", "userbinding", userbinding.Name)
+	if err := r.applyRBAC(ctx, userbinding); err != nil {
+		logger.Error(err, "❌ Failed to apply RBAC")
+		userbinding.Status.LastTransitionMsg = fmt.Sprintf("❌ Failed to apply RBAC: %s", err.Error())
+		_ = r.Status().Update(ctx, userbinding)
+		return ctrl.Result{}, nil
 	}
+
+	// 更新同步状态
+	userbinding.Status.Synced = true
+	userbinding.Status.LastSyncTime = metav1.Now()
+	userbinding.Status.LastAppliedGeneration = userbinding.Generation
+	userbinding.Status.LastTransitionMsg = fmt.Sprintf("✅ Successfully applied RBAC for userbinding %s", userbinding.Name)
+	_ = r.Status().Update(ctx, userbinding)
+	logger.Info("✅ RBAC applied successfully")
 
 	logger.Info("✅ Reconciliation complete", "duration", time.Since(start))
 	return ctrl.Result{}, nil
@@ -300,16 +268,12 @@ func (r *UserBindingReconciler) cleanupRBAC(ctx context.Context, binding *userbi
 	return nil
 }
 
-// 处理RBAC下发
+// applyRBAC 下发RoleBinding或ClusterRoleBinding
 func (r *UserBindingReconciler) applyRBAC(ctx context.Context, userbinding *userbindingv1beta1.UserBinding) error {
-	logger := log.FromContext(ctx)
 	switch userbinding.Spec.Scope.Kind {
 	case "Cluster":
-		if _, err := r.reconcileClusterrolebinding(ctx, userbinding); err != nil {
-			logger.Error(err, "❌ Failed to reconcile clusterrolebinding")
-			return err
-		}
-		return nil
+		_, err := r.reconcileClusterrolebinding(ctx, userbinding)
+		return err
 	case "Workspace":
 		// 🌟 根据label获取workspace下的所有namespace，并下发rolebinding到namespace
 		// 构建label标签，用于获取workspace下的所有namespace
@@ -318,48 +282,24 @@ func (r *UserBindingReconciler) applyRBAC(ctx context.Context, userbinding *user
 		}
 		namespaceList := &corev1.NamespaceList{}
 		if err := r.List(ctx, namespaceList, selector); err != nil {
-			logger.Error(err, "❌ Failed to get namespace list by workspace label")
 			return err
-		}
-
-		if len(namespaceList.Items) == 0 {
-			logger.Info("🛡️ no namespaces found for workspace", "userbinding.Spec.Scope.Name", userbinding.Spec.Scope.Name)
-			return fmt.Errorf("no namespaces found for workspace %s", userbinding.Spec.Scope.Name)
 		}
 
 		for _, ns := range namespaceList.Items {
 			nsName := ns.Name
 			if _, err := r.reconcileRolebinding(ctx, userbinding, nsName); err != nil {
-				// return fmt.Errorf("failed to create RoleBinding for namespace %s: %w", nsName, err)
-				logger.Error(err, "❌ Failed to create RoleBinding for namespace", "userbinding", userbinding.Name, "namespace", nsName)
 				continue // 单个失败不影响继续其他Namespace
 			}
 		}
 		return nil
 
 	case "Namespace":
-		if _, err := r.reconcileRolebinding(ctx, userbinding, userbinding.Spec.Scope.Name); err != nil {
-			logger.Error(err, "❌ Failed to create RoleBinding for namespace", "userbinding", userbinding.Name, "namespace", userbinding.Spec.Scope.Name)
-			return err
-		}
-		return nil
+		_, err := r.reconcileRolebinding(ctx, userbinding, userbinding.Spec.Scope.Name)
+		return err
+
 	default:
-		logger.Info("🛡️ unsupported scope kind[default: Cluster、Workspace、Namespace]", "userbinding", userbinding.Name, "userbinding.Spec.Scope.Kind", userbinding.Spec.Scope.Kind)
 		return fmt.Errorf("❌ unsupported scope kind: %s", userbinding.Spec.Scope.Kind)
 	}
-}
-
-// 更新status信息
-func (r *UserBindingReconciler) updateStatus(ctx context.Context, userbinding *userbindingv1beta1.UserBinding) (ctrl.Result, error) {
-	updated := userbinding.DeepCopy()
-
-	if !reflect.DeepEqual(userbinding.Status, updated.Status) {
-		patch := client.MergeFrom(userbinding.DeepCopy())
-		if err := r.Status().Patch(ctx, updated, patch); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-	return ctrl.Result{}, nil
 }
 
 // 下发clusterrolebinding
@@ -370,12 +310,17 @@ func (r *UserBindingReconciler) reconcileClusterrolebinding(ctx context.Context,
 	saNamespace := "kubeants-system"
 	clusterroleName := userbinding.Spec.Role
 
+	// ManagedByLabel   = "kubeants.io/managed-by"
+	// ManagedByValue   = "userbinding"
+	// UserBindingLable = "kubeants.io/userbinding"
+	// UserLabel        = "kubeants.io/user"
 	crbObj := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "userbinding-" + userbinding.Name,
 			Labels: map[string]string{
 				ManagedByLabel:   ManagedByValue,
 				UserBindingLable: userbinding.Name,
+				UserLabel:        userbinding.Spec.User,
 			},
 		},
 		Subjects: []rbacv1.Subject{
@@ -434,6 +379,7 @@ func (r *UserBindingReconciler) reconcileClusterrolebinding(ctx context.Context,
 		crbObj.Labels = map[string]string{
 			ManagedByLabel:   ManagedByValue,
 			UserBindingLable: userbinding.Name,
+			UserLabel:        userbinding.Spec.User,
 		}
 		// 设置 OwnerReference 确保 UserBinding 删除时 clusterrolebinding 被清理
 		if err := ctrl.SetControllerReference(userbinding, crbObj, r.Scheme); err != nil {
@@ -459,6 +405,7 @@ func (r *UserBindingReconciler) reconcileRolebinding(ctx context.Context, userbi
 			Labels: map[string]string{
 				ManagedByLabel:   ManagedByValue,
 				UserBindingLable: userbinding.Name,
+				UserLabel:        userbinding.Spec.User,
 			},
 		},
 		Subjects: []rbacv1.Subject{
@@ -515,6 +462,7 @@ func (r *UserBindingReconciler) reconcileRolebinding(ctx context.Context, userbi
 		rbObj.Labels = map[string]string{
 			ManagedByLabel:   ManagedByValue,
 			UserBindingLable: userbinding.Name,
+			UserLabel:        userbinding.Spec.User,
 		}
 		// 设置 OwnerReference 确保 UserBinding 删除时 clusterrolebinding 被清理
 		if err := ctrl.SetControllerReference(userbinding, rbObj, r.Scheme); err != nil {
@@ -524,4 +472,44 @@ func (r *UserBindingReconciler) reconcileRolebinding(ctx context.Context, userbi
 	})
 
 	return rbObj, err
+}
+
+// 给userbindig添加user相关label
+// kubeants.io/managed-by=user	表示这个资源是 user 管理的
+// kubeants.io/user=<user名字>	表示这个资源关联的 user
+func (r *UserBindingReconciler) ensureUserBindingLabels(ctx context.Context, userbinding *userbindingv1beta1.UserBinding) error {
+	// 复制原始对象
+	origin := userbinding.DeepCopy()
+
+	// 初始化Labels如果为nil
+	if userbinding.Labels == nil {
+		userbinding.Labels = make(map[string]string)
+	}
+
+	// 定义期望的标签值
+	expectedManagedBy := "user"
+	expectedUser := userbinding.Spec.User
+
+	// 检查当前标签是否符合预期
+	needUpdate := false
+
+	// 检查kubeants.io/managed-by标签
+	if currentManagedBy, exists := userbinding.Labels["kubeants.io/managed-by"]; !exists || currentManagedBy != expectedManagedBy {
+		userbinding.Labels["kubeants.io/managed-by"] = expectedManagedBy
+		needUpdate = true
+	}
+
+	// 检查kubeants.io/user标签
+	if currentUser, exists := userbinding.Labels["kubeants.io/user"]; !exists || currentUser != expectedUser {
+		userbinding.Labels["kubeants.io/user"] = expectedUser
+		needUpdate = true
+	}
+
+	// 如果没有需要更新的内容，直接返回
+	if !needUpdate {
+		return nil
+	}
+
+	// 执行Patch操作
+	return r.Patch(ctx, userbinding, client.MergeFrom(origin))
 }

@@ -1,14 +1,11 @@
 apiVersion: userbinding.kubeants.io/v1beta1
 kind: UserBinding
 metadata:
-  name: "user1-ws1"
+  name: "workspace-ws1-zhangsan"
 spec:
-  user: "user1"
+  user: "zhangsan"
   scope:
     kind: "Workspace"
     name: "ws1"
-  role: "admin"
-# status:
-#   synced: true
-#   lastSyncTime: "2025-04-26T12:00:00Z"
+  role: "view"
 

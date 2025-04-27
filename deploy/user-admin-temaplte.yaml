@@ -7,7 +7,7 @@ spec:
   name: "admin"
   email: "admin@ka.io"
   phone: "138xxxxxx"
-  password: "$bcrypt$xxxxxxx"
+  password: "Root@123"
   state: "active" # active / disabled /delete
 
 ---
@@ -19,7 +19,16 @@ spec:
   name: "张三"
   email: "zhangshan@ka.io"
   phone: "138xxxxxx"
-  password: "$bcrypt$xxxxxxx"
+  password: "Root@123"
   state: "active" # active / disabled /delete
-status:
-  serviceAccount: "user-admin"
+---
+apiVersion: user.kubeants.io/v1beta1
+kind: User
+metadata:
+  name: lisi
+spec:
+  name: "李四"
+  email: "lisi@ka.io"
+  phone: "138xxxxxx"
+  password: "Root@123"
+  state: "active" # active / disabled /delete
