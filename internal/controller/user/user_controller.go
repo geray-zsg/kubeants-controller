@@ -98,7 +98,7 @@ func (r *UserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 	if updated {
-		logger.Info("User password was hashed[密码加密]", "user", user.Name)
+		logger.Info("✅ User password was hashed[密码加密]", "user", user.Name)
 	}
 
 	// 5.更新 User 状态
@@ -127,6 +127,7 @@ func (r *UserReconciler) updateStatus(ctx context.Context, user *userv1beta1.Use
 	updated := user.DeepCopy()
 	updated.Status.LastUpdatedTime = metav1.Now()
 	updated.Status.ServiceAccount = saName
+	updated.Status.ServiceAccountNamespace = "kubeants-system"
 	updated.Status.LastAppliedGeneration = user.Generation
 
 	if !reflect.DeepEqual(user.Status, updated.Status) {

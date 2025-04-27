@@ -33,6 +33,8 @@ type UserSpec struct {
 type UserStatus struct {
 	// ServiceAccount is the name of the service account associated with the user
 	ServiceAccount string `json:"serviceAccount,omitempty"`
+	// ServiceAccountNamespace is the namespace of the service account associated with the user
+	ServiceAccountNamespace string `json:"serviceAccountNamespace,omitempty"`
 	// LastLoginTime is the time of the user's last login
 	LastLoginTime metav1.Time `json:"lastLoginTime,omitempty"`
 	// LastUpdatedTime is the time of the last update to the user's information

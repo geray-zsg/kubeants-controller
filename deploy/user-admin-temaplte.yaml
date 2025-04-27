@@ -1,13 +1,25 @@
+---
 apiVersion: user.kubeants.io/v1beta1
 kind: User
 metadata:
-  name: user1
+  name: admin
 spec:
-  name: "张三"
-  email: "user1@ka.io"
+  name: "admin"
+  email: "admin@ka.io"
   phone: "138xxxxxx"
   password: "$bcrypt$xxxxxxx"
-  state: "disabled" # active / disabled
-# status:
-#   serviceAccount: "user-user1"
-#   lastLoginTime: "2025-04-26T12:00:00Z"
+  state: "active" # active / disabled /delete
+
+---
+apiVersion: user.kubeants.io/v1beta1
+kind: User
+metadata:
+  name: zhangsan
+spec:
+  name: "张三"
+  email: "zhangshan@ka.io"
+  phone: "138xxxxxx"
+  password: "$bcrypt$xxxxxxx"
+  state: "active" # active / disabled /delete
+status:
+  serviceAccount: "user-admin"

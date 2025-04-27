@@ -153,6 +153,12 @@ func (r *UserBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
+	// ✅ 判断是否需要下发（只在 Generation 变化时处理）
+	if userbinding.Status.LastAppliedGeneration == userbinding.Generation {
+		logger.Info("🚫UserBinding未修改，跳过处理", "UserBinding", userbinding.Name)
+		return ctrl.Result{}, nil
+	}
+
 	// --- 处理RBAC下发 ---
 	if !userbinding.Status.Synced && !userbinding.Status.Revoked {
 		logger.Info("🚀 Applying RBAC for userbinding", "userbinding", userbinding.Name)
