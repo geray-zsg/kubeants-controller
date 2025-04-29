@@ -30,6 +30,12 @@ rules:
   - apiGroups: ["user.kubeants.io"]
     resources: ["users/status"]
     verbs: ["*"]
+  - apiGroups: ["userbinding.kubeants.io"]
+    resources: ["userbindings"]
+    verbs: ["*"]
+  - apiGroups: ["userbinding.kubeants.io"]
+    resources: ["userbindings/status"]
+    verbs: ["*"]
   - apiGroups: ["workspace.kubeants.io"]
     resources: ["workspaces","workspaces/status"]
     verbs: ["*"]
@@ -78,7 +84,7 @@ spec:
         app: kubeants-controller
     spec:
       containers:
-        - image: "registry.cn-hangzhou.aliyuncs.com/geray/kubeants-controller:v1.0.0"
+        - image: "registry.cn-hangzhou.aliyuncs.com/geray/kubeants-controller:v1.6.2"
           imagePullPolicy: IfNotPresent
           name: kubeants-controller
       dnsPolicy: ClusterFirst

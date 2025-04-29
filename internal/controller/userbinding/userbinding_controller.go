@@ -90,9 +90,20 @@ func (r *UserBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.Client.Get(ctx, client.ObjectKey{Name: userbinding.Spec.User}, user); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("⚠️ Related User not found, marking revoke", "user", userbinding.Spec.User)
-			// 关联User不存在了，标记回收
-			userbinding.Status.Revoked = true
-			_ = r.Status().Update(ctx, userbinding)
+			// // 关联User不存在了，标记回收
+			// userbinding.Status.Revoked = true
+			// 删除前清理 RBAC
+			if err := r.cleanupRBAC(ctx, userbinding); err != nil {
+				logger.Error(err, "❌ Failed to cleanup RBAC before deletion")
+				return ctrl.Result{}, err
+			}
+
+			if err := r.Delete(ctx, userbinding); err != nil {
+				logger.Error(err, "❌ Failed to delete UserBinding")
+				return ctrl.Result{}, err
+			}
+			logger.Info("✅ UserBinding deleted successfully due to missing User")
+			return ctrl.Result{}, nil
 		} else {
 			logger.Error(err, "❌ Failed to fetch related User")
 			return ctrl.Result{}, err
@@ -477,6 +488,7 @@ func (r *UserBindingReconciler) reconcileRolebinding(ctx context.Context, userbi
 // 给userbindig添加user相关label
 // kubeants.io/managed-by=user	表示这个资源是 user 管理的
 // kubeants.io/user=<user名字>	表示这个资源关联的 user
+// kubeants.io/workspace=<workspace名字>
 func (r *UserBindingReconciler) ensureUserBindingLabels(ctx context.Context, userbinding *userbindingv1beta1.UserBinding) error {
 	// 复制原始对象
 	origin := userbinding.DeepCopy()
@@ -489,6 +501,8 @@ func (r *UserBindingReconciler) ensureUserBindingLabels(ctx context.Context, use
 	// 定义期望的标签值
 	expectedManagedBy := "user"
 	expectedUser := userbinding.Spec.User
+	// expectedKind := userbinding.Spec.Scope.Kind
+	expectedWorkspace := userbinding.Spec.Scope.Name
 
 	// 检查当前标签是否符合预期
 	needUpdate := false
@@ -503,6 +517,14 @@ func (r *UserBindingReconciler) ensureUserBindingLabels(ctx context.Context, use
 	if currentUser, exists := userbinding.Labels["kubeants.io/user"]; !exists || currentUser != expectedUser {
 		userbinding.Labels["kubeants.io/user"] = expectedUser
 		needUpdate = true
+	}
+
+	// 检查kubeants.io/workspace标签
+	if userbinding.Spec.Scope.Kind == "Workspace" {
+		if currentWorkspace, exists := userbinding.Labels["kubeants.io/workspace"]; !exists || currentWorkspace != expectedWorkspace {
+			userbinding.Labels["kubeants.io/workspace"] = expectedWorkspace
+			needUpdate = true
+		}
 	}
 
 	// 如果没有需要更新的内容，直接返回
