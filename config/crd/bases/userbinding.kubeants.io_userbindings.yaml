@@ -50,15 +50,19 @@ spec:
             description: UserBindingSpec defines the desired state of UserBinding.
             properties:
               role:
+                description: 对应权限名称Clusterrole或role
                 type: string
               scope:
                 properties:
                   kind:
+                    description: 权限类别支持Cluster、Workspace和Namespace三种
                     type: string
                   name:
+                    description: Kind为Cluster是随便填写，Workspace和Namespace则填写对应的名称
                     type: string
                 type: object
               user:
+                description: 关联的用户名
                 type: string
             type: object
           status:

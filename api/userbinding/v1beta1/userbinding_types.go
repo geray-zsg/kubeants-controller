@@ -25,13 +25,17 @@ import (
 
 // UserBindingSpec defines the desired state of UserBinding.
 type UserBindingSpec struct {
+	// 关联的用户名
 	User  string `json:"user,omitempty"`
 	Scope Scope  `json:"scope,omitempty"`
-	Role  string `json:"role,omitempty"`
+	// 对应权限名称Clusterrole或role
+	Role string `json:"role,omitempty"`
 }
 
 type Scope struct {
+	// 权限类别支持Cluster、Workspace和Namespace三种
 	Kind string `json:"kind,omitempty"`
+	// Kind为Cluster是随便填写，Workspace和Namespace则填写对应的名称
 	Name string `json:"name,omitempty"`
 }
 

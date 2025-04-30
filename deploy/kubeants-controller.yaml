@@ -84,7 +84,7 @@ spec:
         app: kubeants-controller
     spec:
       containers:
-        - image: "registry.cn-hangzhou.aliyuncs.com/geray/kubeants-controller:v1.6.2"
+        - image: "registry.cn-hangzhou.aliyuncs.com/geray/kubeants-controller:v1.6.4"
           imagePullPolicy: IfNotPresent
           name: kubeants-controller
       dnsPolicy: ClusterFirst

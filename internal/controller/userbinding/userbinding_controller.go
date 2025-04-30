@@ -502,7 +502,8 @@ func (r *UserBindingReconciler) ensureUserBindingLabels(ctx context.Context, use
 	expectedManagedBy := "user"
 	expectedUser := userbinding.Spec.User
 	// expectedKind := userbinding.Spec.Scope.Kind
-	expectedWorkspace := userbinding.Spec.Scope.Name
+	scopeName := userbinding.Spec.Scope.Name
+	// expectedCluster := userbinding.
 
 	// 检查当前标签是否符合预期
 	needUpdate := false
@@ -521,8 +522,27 @@ func (r *UserBindingReconciler) ensureUserBindingLabels(ctx context.Context, use
 
 	// 检查kubeants.io/workspace标签
 	if userbinding.Spec.Scope.Kind == "Workspace" {
-		if currentWorkspace, exists := userbinding.Labels["kubeants.io/workspace"]; !exists || currentWorkspace != expectedWorkspace {
-			userbinding.Labels["kubeants.io/workspace"] = expectedWorkspace
+		if currentWorkspace, exists := userbinding.Labels["kubeants.io/workspace"]; !exists || currentWorkspace != scopeName {
+			userbinding.Labels["kubeants.io/kind"] = "workspace"
+			userbinding.Labels["kubeants.io/workspace"] = scopeName
+			needUpdate = true
+		}
+	}
+
+	// 检查kubeants.io/cluster标签，集群权限
+	if userbinding.Spec.Scope.Kind == "Cluster" {
+		if currentCluster, exists := userbinding.Labels["kubeants.io/cluste"]; !exists || currentCluster != scopeName {
+			userbinding.Labels["kubeants.io/kind"] = "cluster"
+			userbinding.Labels["kubeants.io/cluster"] = scopeName
+			needUpdate = true
+		}
+	}
+
+	//  检查kubeants.io/namespace标签，namespace权限
+	if userbinding.Spec.Scope.Kind == "Namespace" {
+		if currentCluster, exists := userbinding.Labels["kubeants.io/namespace"]; !exists || currentCluster != scopeName {
+			userbinding.Labels["kubeants.io/kind"] = "namespace"
+			userbinding.Labels["kubeants.io/namespace"] = scopeName
 			needUpdate = true
 		}
 	}
