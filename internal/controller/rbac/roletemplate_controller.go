@@ -88,9 +88,21 @@ func (r *RoleTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// ✅ 判断是否需要下发（只在 Generation 变化时处理）
+	// if rt.Status.LastAppliedGeneration == rt.Generation {
+	// 	logger.Info("🚫RoleTemplate未修改，跳过处理", "RoleTemplate", rt.Name)
+	// 	return ctrl.Result{}, nil
+	// }
 	if rt.Status.LastAppliedGeneration == rt.Generation {
-		logger.Info("🚫RoleTemplate未修改，跳过处理", "RoleTemplate", rt.Name)
-		return ctrl.Result{}, nil
+		// 但我们需要检查是否有新的 namespace 出现（namespaceMatches 判断）
+		// 如果当前 expected namespace 集合和 status.AppliedNamespaces 不一致，也应该继续处理
+		newNsList, err := r.getApplicableNamespaces(ctx, rt)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if reflect.DeepEqual(newNsList, rt.Status.AppliedNamespaces) {
+			logger.Info("🚫RoleTemplate未修改且无新namespace，跳过处理")
+			return ctrl.Result{}, nil
+		}
 	}
 
 	// ✅ 获取当前应下发的命名空间列表
